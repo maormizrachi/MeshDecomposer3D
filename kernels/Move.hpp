@@ -22,6 +22,8 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Move"; }
 
+        const PointT &getMoveVec() const { return moveVec; }
+
     private:
         PointT moveVec;
         const IndexingKernel3D<PointT> *beforeIndexing;

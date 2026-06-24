@@ -119,6 +119,15 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Parallelepiped"; }
 
+        const Mat33<typename PointT::coord_type> &getTransformation() const { return transformation; }
+
+        static Parallelepiped fromTransformation(const Mat33<typename PointT::coord_type> &t)
+        {
+            Parallelepiped p(PointT(1, 0, 0), PointT(0, 1, 0), PointT(0, 0, 1));
+            p.transformation = t;
+            return p;
+        }
+
     private:
         void calculateTransformation(const PointT &u, const PointT &v, const PointT &w)
         {

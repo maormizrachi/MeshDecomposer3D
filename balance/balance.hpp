@@ -12,7 +12,7 @@
 #include <functional>
 #include <assert.h>
 #include <mpi.h>
-#include "error.hpp"
+#include "../error.hpp"
 
 namespace
 {

@@ -27,6 +27,8 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Scale"; }
 
+        const PointT &getScale() const { return scale; }
+
     private:
         PointT scale;
         const IndexingKernel3D<PointT> *beforeIndexing;

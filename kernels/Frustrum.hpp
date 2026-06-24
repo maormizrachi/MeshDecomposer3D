@@ -127,12 +127,14 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Frustrum"; }
 
-    private:
+        const Mat44<typename PointT::coord_type> &getP() const { return P; }
+
         Frustrum(const Mat44<typename PointT::coord_type> &P)
             : P(P), beforeIndexing(nullptr), afterIndexing(nullptr)
         {
         }
 
+    private:
         PointT find_S(const std::vector<std::vector<PointT>> &faces) const
         {
             std::vector<PointT> normals;

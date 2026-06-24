@@ -11,7 +11,7 @@
 #include <vector>
 #include <mpi.h>
 #include <mpi_utils/mpi_commands.hpp>
-#include "error.hpp"
+#include "../error.hpp"
 
 template<typename T>
 struct WeightedBalance3Pair

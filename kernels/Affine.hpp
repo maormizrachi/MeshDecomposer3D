@@ -31,6 +31,9 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Affine"; }
 
+        const Linear<PointT> &getLinear() const { return linear; }
+        const Move<PointT> &getMove() const { return move; }
+
     private:
         Linear<PointT> linear;
         Move<PointT> move;

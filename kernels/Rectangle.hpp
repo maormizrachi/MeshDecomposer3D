@@ -56,6 +56,9 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Rectangle"; }
 
+        const Move<PointT> &getMoveIndexing() const { return moveIndexing; }
+        const Scale<PointT> &getScaleIndexing() const { return scaleIndexing; }
+
     private:
         const IndexingKernel3D<PointT> *beforeIndexing;
         Move<PointT> moveIndexing;

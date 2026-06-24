@@ -24,6 +24,8 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Linear"; }
 
+        const Mat33<typename PointT::coord_type> &getTransformation() const { return transformation; }
+
     private:
         Mat33<typename PointT::coord_type> transformation;
         const IndexingKernel3D<PointT> *beforeIndexing;

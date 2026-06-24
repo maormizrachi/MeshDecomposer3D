@@ -9,7 +9,7 @@
 #include <mpi.h>
 #include <mpi_utils/mpi_commands.hpp>
 #include <mpi_utils/serialize/Serializer.hpp>
-#include "error.hpp"
+#include "../error.hpp"
 
 template<typename T>
 struct LocationSpecifier : public Serializable
