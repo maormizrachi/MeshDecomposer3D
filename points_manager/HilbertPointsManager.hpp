@@ -17,7 +17,7 @@
 #include "../load_balancing/HilbertLoadBalancer.hpp"
 #include "PointsManager.hpp"
 
-template<typename PointT, typename PayloadT>
+template<typename PointT, typename PayloadT = EmptyPayload>
 class HilbertPointsManager : public PointsManager<PointT, PayloadT>
 {
 public:

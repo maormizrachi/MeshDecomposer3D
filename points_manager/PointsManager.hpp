@@ -65,7 +65,11 @@ struct ExchangeFieldIO<T, std::enable_if_t<!is_serializable_v<T> && std::is_triv
 
 } // namespace points_manager_detail
 
-template<typename PointT, typename PayloadT>
+struct EmptyPayload
+{
+};
+
+template<typename PointT, typename PayloadT = EmptyPayload>
 struct ExchangePoint : public Serializable
 {
     static_assert(
@@ -106,7 +110,7 @@ struct ExchangePoint : public Serializable
     }
 };
 
-template<typename PointT, typename PayloadT>
+template<typename PointT, typename PayloadT = EmptyPayload>
 struct PointsExchangeResult
 {
     std::vector<PointT> newPoints;
@@ -118,7 +122,7 @@ struct PointsExchangeResult
     std::vector<size_t> indicesToSelf;
 };
 
-template<typename PointT, typename PayloadT>
+template<typename PointT, typename PayloadT = EmptyPayload>
 class PointsManager
 {
 public:
