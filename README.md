@@ -56,7 +56,7 @@ Typical use cases include assigning ownership of Lagrangian particles, rebalanci
   - [cpp-MPI-utils](https://github.com/maormizrachi/cpp-MPI-utils) (`mpi_utils`): serialization, MPI exchange utilities
   - `spatial_ds`: octrees, bounding boxes, distributed spatial data structures
 
-Define `RICH_MPI` when compiling code that uses MPI-dependent components (`PointsManager`, `HilbertPointsManager`, environment agents).
+Include the MPI-dependent headers only from targets that are compiled and linked with MPI.
 
 ## Point Type Requirements
 
@@ -91,7 +91,6 @@ Both `PointT` and `PayloadT` are checked at compile time when used in `ExchangeP
 ## Usage
 
 ```cpp
-#define RICH_MPI
 #include <mpi.h>
 #include "points_manager/HilbertPointsManager.hpp"
 
@@ -165,7 +164,6 @@ The `what()` message includes the base message followed by all attached entries.
 The library is primarily header-only. Add the repository root to your include path and link against MPI. Ensure include paths for `mpi_utils` and `spatial_ds` are available to the compiler.
 
 ```cmake
-target_compile_definitions(my_target PRIVATE RICH_MPI)
 target_include_directories(my_target PRIVATE
     /path/to/MeshDecomposer3D
     /path/to/cpp-MPI-utils

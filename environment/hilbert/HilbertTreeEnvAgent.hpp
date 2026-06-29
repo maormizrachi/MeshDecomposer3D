@@ -1,7 +1,6 @@
 #ifndef HILBERT_TREE_ENVIRONMENT_AGENT_HPP
 #define HILBERT_TREE_ENVIRONMENT_AGENT_HPP
 
-#ifdef RICH_MPI
 
 #include <memory>
 #include <vector>
@@ -66,6 +65,5 @@ private:
     std::shared_ptr<HilbertTree_Type> hilbertTree;
 };
 
-#endif // RICH_MPI
 
 #endif // HILBERT_TREE_ENVIRONMENT_AGENT_HPP

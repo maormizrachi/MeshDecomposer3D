@@ -1,7 +1,6 @@
 #ifndef PLAIN_DIST_OCT_ENVIRONMENT_AGENT_HPP
 #define PLAIN_DIST_OCT_ENVIRONMENT_AGENT_HPP
 
-#ifdef RICH_MPI
 
 #include <spatial_ds/DistributedOctTree/DistributedOctTree.hpp>
 #include <spatial_ds/OctTree/OctTree.hpp>
@@ -53,6 +52,5 @@ private:
     DistributedOctTree_Type *distributedOctTree = nullptr;
 };
 
-#endif // RICH_MPI
 
 #endif // PLAIN_DIST_OCT_ENVIRONMENT_AGENT_HPP

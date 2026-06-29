@@ -1,7 +1,6 @@
 #ifndef CURVE_ENVIRONMENT_AGENT_HPP
 #define CURVE_ENVIRONMENT_AGENT_HPP
 
-#ifdef RICH_MPI
 
 #include <algorithm>
 #include <iterator>
@@ -51,6 +50,5 @@ protected:
     std::shared_ptr<LoadBalancerType> loadBalancer;
 };
 
-#endif // RICH_MPI
 
 #endif // CURVE_ENVIRONMENT_AGENT_HPP

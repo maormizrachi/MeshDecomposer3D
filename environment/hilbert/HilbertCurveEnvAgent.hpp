@@ -1,7 +1,6 @@
 #ifndef HILBERT_CURVE_ENVAGENT_HPP
 #define HILBERT_CURVE_ENVAGENT_HPP
 
-#ifdef RICH_MPI
 
 #include <memory>
 #include <utility>
@@ -45,6 +44,5 @@ public:
     inline size_t getOrder() const { return this->loadBalancer->getOrder(); }
 };
 
-#endif // RICH_MPI
 
 #endif // HILBERT_CURVE_ENVAGENT_HPP

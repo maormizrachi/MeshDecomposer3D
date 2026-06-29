@@ -1,7 +1,6 @@
 #ifndef ENVIRONMENT_AGENT_HPP
 #define ENVIRONMENT_AGENT_HPP
 
-#ifdef RICH_MPI
 
 #include <mpi.h>
 #include <boost/container/flat_set.hpp>
@@ -40,6 +39,5 @@ protected:
     int rank, size;
 };
 
-#endif // RICH_MPI
 
 #endif // ENVIRONMENT_AGENT_HPP

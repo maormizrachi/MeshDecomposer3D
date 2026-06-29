@@ -2,7 +2,6 @@
 #define HILBERT_RECTANGULAR_TREE_3D_HPP
 
 #include "../HilbertConvertor3D.hpp"
-#ifdef RICH_MPI
 
 #include <iostream>
 #include <vector>
@@ -616,6 +615,5 @@ std::vector<int> HilbertRectangularTree3D<PointT, max_leaf_ranks>::getOwners(con
     return result;
 }
 
-#endif // RICH_MPI
 
 #endif // HILBERT_RECTANGULAR_TREE_3D_HPP

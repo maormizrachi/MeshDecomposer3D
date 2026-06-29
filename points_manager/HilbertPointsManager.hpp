@@ -1,7 +1,6 @@
 #ifndef MESH_DECOMPOSER_HILBERT_POINTS_MANAGER_HPP
 #define MESH_DECOMPOSER_HILBERT_POINTS_MANAGER_HPP
 
-#ifdef RICH_MPI
 
 #include <iostream>
 #include <memory>
@@ -263,6 +262,5 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
     return exchangeResult;
 }
 
-#endif // RICH_MPI
 
 #endif // MESH_DECOMPOSER_HILBERT_POINTS_MANAGER_HPP

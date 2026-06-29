@@ -1,7 +1,6 @@
 #ifndef DIST_OCT_ENVIRONMENT_AGENT_HPP
 #define DIST_OCT_ENVIRONMENT_AGENT_HPP
 
-#ifdef RICH_MPI
 
 #include <memory>
 #include <spatial_ds/DistributedOctTree/DistributedOctTree.hpp>
@@ -71,6 +70,5 @@ private:
     std::vector<PointT> points;
 };
 
-#endif // RICH_MPI
 
 #endif // DIST_OCT_ENVIRONMENT_AGENT_HPP

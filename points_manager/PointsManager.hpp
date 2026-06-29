@@ -1,7 +1,6 @@
 #ifndef MESH_DECOMPOSER_POINTS_MANAGER_HPP
 #define MESH_DECOMPOSER_POINTS_MANAGER_HPP
 
-#ifdef RICH_MPI
 
 #include <algorithm>
 #include <chrono>
@@ -117,6 +116,7 @@ struct PointsExchangeResult
     std::vector<double> newWeights;
     std::vector<PayloadT> newPayloads;
     std::vector<size_t> newIndices;
+    std::vector<bool> participatingIndices;
     std::vector<int> sentProcessors;
     std::vector<std::vector<size_t>> sentIndicesToProcessors;
     std::vector<size_t> indicesToSelf;
@@ -346,6 +346,7 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::pointsEx
     toReturn.newWeights.reserve(ans.size());
     toReturn.newPayloads.reserve(ans.size());
     toReturn.newIndices.reserve(ans.size());
+    toReturn.participatingIndices.reserve(ans.size());
 
     for(const ExchangePoint<PointT, PayloadT> &exchangedPoint : ans)
     {
@@ -353,11 +354,11 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::pointsEx
         toReturn.newWeights.push_back(exchangedPoint.weight);
         toReturn.newPayloads.push_back(exchangedPoint.payload);
         toReturn.newIndices.push_back(exchangedPoint.originalIndex);
+        toReturn.participatingIndices.push_back(exchangedPoint.participating);
     }
 
     return toReturn;
 }
 
-#endif // RICH_MPI
 
 #endif // MESH_DECOMPOSER_POINTS_MANAGER_HPP
