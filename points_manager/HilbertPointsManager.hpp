@@ -43,7 +43,7 @@ public:
 
     void rebalance(const std::vector<PointT> &points, const std::vector<double> &weights = std::vector<double>()) override;
 
-    void setIndexing(std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> indexing);
+    void setIndexing(std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> const &indexing);
 
     std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> getIndexing() const
     {
@@ -194,7 +194,7 @@ void HilbertPointsManager<PointT, PayloadT>::rebalance(
 
 template<typename PointT, typename PayloadT>
 void HilbertPointsManager<PointT, PayloadT>::setIndexing(
-    std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> indexing)
+    std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> const &indexing)
 {
     this->customIndexingIsSet = true;
     if(this->loadBalancer != nullptr)

@@ -7,6 +7,8 @@
 #ifndef _RICH_BALANCE2_HPP
 #define _RICH_BALANCE2_HPP
 
+#ifdef RICH_MPI
+
 #include <vector>
 #include <algorithm>
 #include <functional>
@@ -172,5 +174,7 @@ std::vector<T> getBorders(std::vector<T> &input, const Comparator &comp = [](con
 
     return getStatOrders(input, stats, comp, comm);
 }
+
+#endif // RICH_MPI
 
 #endif // _RICH_BALANCE2_HPP

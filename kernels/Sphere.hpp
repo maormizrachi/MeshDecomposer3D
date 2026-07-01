@@ -29,6 +29,8 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Sphere"; }
 
+        const Move<PointT> &getMoveIndexing() const { return moveIndexing; }
+
     private:
         const IndexingKernel3D<PointT> *beforeIndexing;
         Move<PointT> moveIndexing;

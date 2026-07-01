@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "../error.hpp"
 #include "../hilbert/hilbertTypes.h"
 #include "LoadBalancer.hpp"
 
@@ -23,6 +24,15 @@ public:
 
     int getOwner(const PointT &point) const override
     {
+        if(!std::is_sorted(this->boundaries.cbegin(), this->boundaries.cend()))
+        {
+            DomainDecompError eo("CurveLoadBalancer::getOwner: Hilbert boundaries are not sorted");
+            eo.addEntry("point", point);
+            eo.addEntry("curve index", this->getCurveIndex(point));
+            eo.addEntry("boundaries", this->boundaries.size());
+            throw eo;
+        }
+
         curve_index_t d = this->getCurveIndex(point);
         size_t index = std::distance(this->boundaries.cbegin(), std::upper_bound(this->boundaries.cbegin(), this->boundaries.cend(), d));
         return static_cast<int>(std::min<size_t>(index, static_cast<size_t>(this->size - 1)));

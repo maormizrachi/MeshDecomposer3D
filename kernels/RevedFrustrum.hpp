@@ -151,12 +151,16 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "RevedFrustrum"; }
 
-    private:
         RevedFrustrum(const PointT &S, typename PointT::coord_type h, typename PointT::coord_type ratio)
             : S(S), h(h), beforeIndexing(nullptr), afterIndexing(nullptr), ratio(ratio)
         {
         }
 
+        const PointT &getS() const { return S; }
+        typename PointT::coord_type getH() const { return h; }
+        typename PointT::coord_type getRatio() const { return ratio; }
+
+    private:
         PointT find_S(const std::vector<std::vector<PointT>> &faces) const
         {
             std::vector<PointT> normals;

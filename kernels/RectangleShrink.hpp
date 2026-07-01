@@ -46,6 +46,17 @@ namespace Kernelization3D
         {
         }
 
+        RectangleShrink(const Move<PointT> &moveIndexing, const Shrink<PointT> &shrinkIndexing,
+                        const IndexingKernel3D<PointT> *beforeIndexing = nullptr)
+            : beforeIndexing(beforeIndexing),
+              moveIndexing(moveIndexing),
+              shrinkIndexing(shrinkIndexing)
+        {
+        }
+
+        const Move<PointT> &getMoveIndexing() const { return moveIndexing; }
+        const Shrink<PointT> &getShrinkIndexing() const { return shrinkIndexing; }
+
         PointT operator()(const PointT &point) const override
         {
             PointT vec = (this->beforeIndexing == nullptr) ? point : (*this->beforeIndexing)(point);

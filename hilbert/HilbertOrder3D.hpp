@@ -41,7 +41,7 @@ public:
     unsigned long long int Hilbert3D_xyz2d(PointT const &rvPoint, int numOfIterations) const;
 
 private:
-    void RotateShape(int iShapeIndex, vector<int> vAxes);
+    void RotateShape(int iShapeIndex, vector<int> const &vAxes);
     void RotateShape(HilbertCurve3D_shape<PointT> const &roShape, HilbertCurve3D_shape<PointT> &roShapeOut, int iRotationIndex);
     int GetRotation(int *piRotation, int iRotationIndex);
     int FindShapeIndex(const HilbertCurve3D_shape<PointT> &roShape);
@@ -176,7 +176,7 @@ int HilbertCurve3D<PointT>::GetRotation(int *piRotation, int iRotationIndex)
 }
 
 template<typename PointT>
-void HilbertCurve3D<PointT>::RotateShape(int iShapeIndex, vector<int> vAxes)
+void HilbertCurve3D<PointT>::RotateShape(int iShapeIndex, vector<int> const &vAxes)
 {
     int iSign;
 
@@ -214,7 +214,7 @@ void HilbertCurve3D<PointT>::RotateShape(HilbertCurve3D_shape<PointT> const &roS
 {
     int iSign;
 
-    vector<int> vAxes = m_vRotations[static_cast<size_t>(iRotationIndex)];
+    const vector<int> &vAxes = m_vRotations[static_cast<size_t>(iRotationIndex)];
     roShapeOut = roShape;
 
     for(int ii = 0; ii < 7; ++ii)

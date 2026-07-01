@@ -18,51 +18,9 @@
 #include "../environment/EnvironmentAgent.hpp"
 #include "../error.hpp"
 #include "../load_balancing/LoadBalancer.hpp"
+#include "ExchangeFieldIO.hpp"
 
 #define IMBALANCE_FACTOR 1.15
-
-namespace points_manager_detail
-{
-
-template<typename T>
-inline constexpr bool is_serializable_v = std::is_base_of_v<Serializable, T>;
-
-template<typename T>
-inline constexpr bool is_exchange_field_v =
-    is_serializable_v<T> || std::is_trivially_copyable_v<T>;
-
-template<typename T, typename = void>
-struct ExchangeFieldIO;
-
-template<typename T>
-struct ExchangeFieldIO<T, std::enable_if_t<is_serializable_v<T>>>
-{
-    static size_t dump(const T &field, Serializer *serializer)
-    {
-        return field.dump(serializer);
-    }
-
-    static size_t load(T &field, const Serializer *serializer, size_t byteOffset)
-    {
-        return field.load(serializer, byteOffset);
-    }
-};
-
-template<typename T>
-struct ExchangeFieldIO<T, std::enable_if_t<!is_serializable_v<T> && std::is_trivially_copyable_v<T>>>
-{
-    static size_t dump(const T &field, Serializer *serializer)
-    {
-        return serializer->insert(field);
-    }
-
-    static size_t load(T &field, const Serializer *serializer, size_t byteOffset)
-    {
-        return serializer->extract(field, byteOffset);
-    }
-};
-
-} // namespace points_manager_detail
 
 struct EmptyPayload
 {
@@ -162,7 +120,7 @@ public:
 
     void setImbalanceTolerance(double tolerance);
 
-    void reportImbalance(void) const;
+    void reportImbalance(size_t localPointCount) const;
 
     bool checkForRebalance(double myWeight) const;
 
@@ -202,7 +160,7 @@ void PointsManager<PointT, PayloadT>::setImbalanceTolerance(double tolerance)
 }
 
 template<typename PointT, typename PayloadT>
-void PointsManager<PointT, PayloadT>::reportImbalance(void) const
+void PointsManager<PointT, PayloadT>::reportImbalance(size_t localPointCount) const
 {
     struct
     {
@@ -216,9 +174,14 @@ void PointsManager<PointT, PayloadT>::reportImbalance(void) const
     double avgWeight;
     MPI_Allreduce(&this->totalWeight, &avgWeight, 1, MPI_DOUBLE, MPI_SUM, this->comm);
     avgWeight /= static_cast<double>(this->size);
+
+    size_t maxRankPointCount = localPointCount;
+    MPI_Bcast(&maxRankPointCount, 1, MPI_UNSIGNED_LONG_LONG, maxWeighted.rank, this->comm);
+
     if(this->rank == 0)
     {
         std::cout << "Imbalance report: max weight is " << maxWeighted.weight << " in rank " << maxWeighted.rank
+                  << " (" << maxRankPointCount << " points)"
                   << ", min weight is " << minWeighted.weight << " in rank " << minWeighted.rank
                   << ", average weight is " << avgWeight << std::endl;
     }
@@ -302,7 +265,7 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::update(
         {
             std::cout << "Time for load balancing: " << std::chrono::duration<double>(end - start).count() << " seconds" << std::endl;
         }
-        this->reportImbalance();
+        this->reportImbalance(result.newPoints.size());
     }
     return result;
 }

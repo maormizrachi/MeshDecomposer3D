@@ -30,6 +30,16 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Shrink"; }
 
+        static Shrink fromStoredScale(typename PointT::coord_type scale,
+                                      const IndexingKernel3D<PointT> *beforeIndexing = nullptr)
+        {
+            Shrink shrink(PointT(), beforeIndexing);
+            shrink.scale = scale;
+            return shrink;
+        }
+
+        typename PointT::coord_type getScale() const { return scale; }
+
     private:
         typename PointT::coord_type scale;
         const IndexingKernel3D<PointT> *beforeIndexing;

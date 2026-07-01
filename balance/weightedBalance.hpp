@@ -1,6 +1,8 @@
 #ifndef WEIGHTED_BALANCE_HPP
 #define WEIGHTED_BALANCE_HPP
 
+#ifdef RICH_MPI
+
 #include <vector>
 #include <algorithm>
 #include <optional>
@@ -416,5 +418,7 @@ std::vector<T> getBorders(const std::vector<T> &values, const Comparator &comp =
 {
     return getWeightedBorders(values, std::vector<double>(values.size(), 1.0), comp, comm);
 }
+
+#endif // RICH_MPI
 
 #endif // WEIGHTED_BALANCE_HPP

@@ -48,6 +48,17 @@ namespace Kernelization3D
             this->scaleIndexing = Scale<PointT>(PointT(max_scale, max_scale, max_scale));
         }
 
+        SameRectangle(const Move<PointT> &moveIndexing, const Scale<PointT> &scaleIndexing,
+                      const IndexingKernel3D<PointT> *indexing = nullptr)
+            : indexing(indexing),
+              moveIndexing(moveIndexing),
+              scaleIndexing(scaleIndexing)
+        {
+        }
+
+        const Move<PointT> &getMoveIndexing() const { return moveIndexing; }
+        const Scale<PointT> &getScaleIndexing() const { return scaleIndexing; }
+
         PointT operator()(const PointT &point) const override
         {
             PointT vec = (this->indexing == nullptr) ? point : (*this->indexing)(point);

@@ -16,6 +16,17 @@ namespace Kernelization3D
         {
         }
 
+        Reflection(const PointT &reflectionVector, const PointT &factoredVec,
+                   const IndexingKernel3D<PointT> *beforeIndexing = nullptr)
+            : reflectionVector(reflectionVector),
+              factoredVec(factoredVec),
+              beforeIndexing(beforeIndexing)
+        {
+        }
+
+        const PointT &getReflectionVector() const { return reflectionVector; }
+        const PointT &getFactoredVec() const { return factoredVec; }
+
         PointT operator()(const PointT &point) const override
         {
             PointT vec = (this->beforeIndexing == nullptr) ? point : (*this->beforeIndexing)(point);

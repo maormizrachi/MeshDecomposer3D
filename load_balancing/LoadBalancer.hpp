@@ -1,6 +1,8 @@
 #ifndef MESH_DECOMPOSER_LOAD_BALANCER_HPP
 #define MESH_DECOMPOSER_LOAD_BALANCER_HPP
 
+#ifdef RICH_MPI
+
 #include <mpi.h>
 #include <mpi_utils/mpi_commands.hpp>
 #include <string>
@@ -33,5 +35,7 @@ protected:
     MPI_Comm comm;
     rank_t rank, size;
 };
+
+#endif // RICH_MPI
 
 #endif // MESH_DECOMPOSER_LOAD_BALANCER_HPP

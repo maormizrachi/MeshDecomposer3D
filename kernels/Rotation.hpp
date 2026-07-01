@@ -52,6 +52,14 @@ namespace Kernelization3D
 
         std::string getTypeName() const override { return "Rotation"; }
 
+        Rotation(const Mat33<typename PointT::coord_type> &mat,
+                 const IndexingKernel3D<PointT> *beforeIndexing = nullptr)
+            : mat(mat), beforeIndexing(beforeIndexing)
+        {
+        }
+
+        const Mat33<typename PointT::coord_type> &getMat() const { return mat; }
+
     private:
         Mat33<typename PointT::coord_type> mat;
         const IndexingKernel3D<PointT> *beforeIndexing;

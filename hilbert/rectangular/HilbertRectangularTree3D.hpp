@@ -3,6 +3,7 @@
 
 #include "../HilbertConvertor3D.hpp"
 
+#include "../HilbertConvertor3D.hpp"
 #include <iostream>
 #include <vector>
 #include <functional>
@@ -103,7 +104,7 @@ public:
 
     std::vector<std::vector<BoundingBox<PointT>>> getBoundingBoxesOfRanks(void) const;
 
-    std::vector<const Node *> getValuesIf(const std::function<bool(const Node *)> ifOpenFunction,
+    std::vector<const Node *> getValuesIf(const std::function<bool(const Node *)> &ifOpenFunction,
                                           const std::function<bool(const Node *)> &ifAddValueFunction) const;
 
     inline size_t getDepth() const { return this->depth; }
@@ -543,7 +544,7 @@ std::vector<std::vector<BoundingBox<PointT>>> HilbertRectangularTree3D<PointT, m
 template<typename PointT, int max_leaf_ranks>
 std::vector<const typename HilbertRectangularTree3D<PointT, max_leaf_ranks>::Node *>
 HilbertRectangularTree3D<PointT, max_leaf_ranks>::getValuesIf(
-    const std::function<bool(const Node *)> ifOpenFunction,
+    const std::function<bool(const Node *)> &ifOpenFunction,
     const std::function<bool(const Node *)> &ifAddValueFunction) const
 {
     std::vector<const Node *> nodes = {this->root};

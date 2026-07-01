@@ -1,6 +1,8 @@
 #ifndef WEIGHTED_BALANCE2_HPP
 #define WEIGHTED_BALANCE2_HPP
 
+#ifdef RICH_MPI
+
 #include <iostream>
 #include <vector>
 #include <functional>
@@ -140,5 +142,7 @@ std::vector<T> getWeightedBorders2(const std::vector<T> &values, const std::vect
     }
     return borders;
 }
+
+#endif // RICH_MPI
 
 #endif // WEIGHTED_BALANCE2_HPP

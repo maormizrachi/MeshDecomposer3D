@@ -1,6 +1,9 @@
 #ifndef MESH_DECOMPOSER_HILBERT_LOAD_BALANCER_HPP
 #define MESH_DECOMPOSER_HILBERT_LOAD_BALANCER_HPP
 
+#ifdef RICH_MPI
+
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -21,6 +24,20 @@
 
 #define SPACE_FACTOR 1e-5
 
+namespace
+{
+    // CurveLoadBalancer::getOwner uses std::upper_bound on boundaries, so the
+    // boundaries vector must be sorted.  rescale()/changeBox() map every old cut
+    // point through d -> xyz -> d after changing the Hilbert convertor box.
+    // Hilbert order is not coordinate-wise monotone under that mapping, so two
+    // adjacent cuts can swap.  Keeping the swapped order corrupts owner lookup
+    // and can route particles/ghosts to the wrong rank.
+    inline void SortHilbertBoundaries(std::vector<curve_index_t> &boundaries)
+    {
+        std::sort(boundaries.begin(), boundaries.end());
+    }
+}
+
 template<typename PointT>
 class HilbertLoadBalancer : public CurveLoadBalancer<PointT>
 {
@@ -32,6 +49,7 @@ public:
                         const std::vector<curve_index_t> &boundaries = std::vector<curve_index_t>())
         : CurveLoadBalancer<PointT>(boundaries), indexing(indexing)
     {
+        SortHilbertBoundaries(this->boundaries);
         this->initializeConvertor(ll, ur, points);
     }
 
@@ -39,7 +57,11 @@ public:
                         std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> indexing,
                         const std::vector<curve_index_t> &boundaries)
         : CurveLoadBalancer<PointT>(boundaries), convertor(std::move(convertor)), indexing(std::move(indexing))
-    {}
+    {
+        SortHilbertBoundaries(this->boundaries);
+    }
+
+    // Duplicates are allowed and are meaningful for empty/zero-width rank regions.
 
     ~HilbertLoadBalancer() override = default;
 
@@ -51,7 +73,7 @@ public:
 
     curve_index_t getCurveIndex(const PointT &point) const override;
 
-    void setIndexing(const std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> newIndexing);
+    void setIndexing(const std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> &newIndexing);
 
     inline std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> getIndexing() const { return this->indexing; }
 
@@ -151,6 +173,7 @@ void HilbertLoadBalancer<PointT>::rebalance(const std::vector<PointT> &points, c
         std::cout << "Running rebalancing" << std::endl;
     }
     this->boundaries = getWeightedBorders3(indices, weights, std::less<curve_index_t>{}, this->comm);
+    SortHilbertBoundaries(this->boundaries);
     if(this->boundaries.empty())
     {
         auto rectangularConvertor = std::dynamic_pointer_cast<HilbertRectangularConvertor3D<PointT>>(this->convertor);
@@ -168,6 +191,7 @@ void HilbertLoadBalancer<PointT>::rebalance(const std::vector<PointT> &points, c
             this->boundaries[static_cast<size_t>(boundaryRank)] =
                 static_cast<curve_index_t>(std::ceil(static_cast<long double>(hilbertSize) * fraction));
         }
+        SortHilbertBoundaries(this->boundaries);
     }
 }
 
@@ -206,6 +230,7 @@ void HilbertLoadBalancer<PointT>::rescale(const PointT &ll, const PointT &ur, co
     {
         this->boundaries[i] = this->convertor->xyz2d(rescaled[i]);
     }
+    SortHilbertBoundaries(this->boundaries);
 }
 
 template<typename PointT>
@@ -258,10 +283,11 @@ void HilbertLoadBalancer<PointT>::changeBox(const std::pair<PointT, PointT> &new
     {
         this->boundaries[i] = this->convertor->xyz2d(rescaled[i]);
     }
+    SortHilbertBoundaries(this->boundaries);
 }
 
 template<typename PointT>
-void HilbertLoadBalancer<PointT>::setIndexing(const std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> newIndexing)
+void HilbertLoadBalancer<PointT>::setIndexing(const std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> &newIndexing)
 {
     this->indexing = newIndexing;
     this->convertor = nullptr;
@@ -290,5 +316,7 @@ void HilbertLoadBalancer<PointT>::printInfo(void)
     }
     std::cout << "]" << std::endl;
 }
+
+#endif // RICH_MPI
 
 #endif // MESH_DECOMPOSER_HILBERT_LOAD_BALANCER_HPP
