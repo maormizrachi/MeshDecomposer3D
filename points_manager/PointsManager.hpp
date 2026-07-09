@@ -12,6 +12,7 @@
 
 #include <mpi.h>
 #include <mpi_utils/exchange.hpp>
+#include <mpi_utils/mpi_reduce.hpp>
 #include <mpi_utils/serialize/Serializable.hpp>
 #include <mpi_utils/serialize/Serializer.hpp>
 
@@ -178,12 +179,17 @@ void PointsManager<PointT, PayloadT>::reportImbalance(size_t localPointCount) co
     size_t maxRankPointCount = localPointCount;
     MPI_Bcast(&maxRankPointCount, 1, MPI_UNSIGNED_LONG_LONG, maxWeighted.rank, this->comm);
 
+    auto [maxPointsRank, maxPointsVal] = MPI_Max_loc(static_cast<int>(localPointCount), this->comm);
+    auto [minPointsRank, minPointsVal] = MPI_Min_loc(static_cast<int>(localPointCount), this->comm);
+
     if(this->rank == 0)
     {
         std::cout << "Imbalance report: max weight is " << maxWeighted.weight << " in rank " << maxWeighted.rank
                   << " (" << maxRankPointCount << " points)"
                   << ", min weight is " << minWeighted.weight << " in rank " << minWeighted.rank
-                  << ", average weight is " << avgWeight << std::endl;
+                  << ", average weight is " << avgWeight
+                  << ", points: max=" << maxPointsVal << " (rank " << maxPointsRank << "), min=" << minPointsVal << " (rank " << minPointsRank << ")"
+                  << std::endl;
     }
 }
 
