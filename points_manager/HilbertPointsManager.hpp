@@ -65,6 +65,7 @@ private:
         const std::vector<PointT> &points,
         const std::vector<double> &weights,
         const std::vector<PayloadT> &payloads,
+        const std::vector<size_t> &indicesToWorkWith,
         bool noExchange);
 
     std::shared_ptr<HilbertLoadBalancer<PointT>> loadBalancer = nullptr;
@@ -125,16 +126,7 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
     }
     else
     {
-        if(allPoints.size() != indicesToWorkWith.size())
-        {
-            DomainDecompError eo(
-                "Error in HilbertPointsManager::exchange: in the first exchange, all points must be provided. "
-                "Currently, points and indicesToWorkWith have different sizes");
-            eo.addEntry("allPoints.size()", allPoints.size());
-            eo.addEntry("indicesToWorkWith.size()", indicesToWorkWith.size());
-            throw eo;
-        }
-        exchangeResult = this->initialize(allPoints, allWeights, payloads, noExchange);
+        exchangeResult = this->initialize(allPoints, allWeights, payloads, indicesToWorkWith, noExchange);
     }
 
     return exchangeResult;
@@ -213,11 +205,9 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
     const std::vector<PointT> &points,
     const std::vector<double> &weights,
     const std::vector<PayloadT> &payloads,
+    const std::vector<size_t> &indicesToWorkWith,
     bool noExchange)
 {
-    std::vector<size_t> allIndices(points.size());
-    std::iota(allIndices.begin(), allIndices.end(), 0);
-
     if(not noExchange)
     {
         auto indexing = (this->pendingIndexing_ != nullptr)
@@ -236,7 +226,7 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
             {
                 return this->rank;
             },
-            points, weights, payloads, allIndices);
+            points, weights, payloads, indicesToWorkWith);
     }
     else
     {
@@ -245,7 +235,7 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
             {
                 return this->loadBalancer->getOwner(entry.point);
             },
-            points, weights, payloads, allIndices);
+            points, weights, payloads, indicesToWorkWith);
     }
 
     if(this->customIndexingIsSet)

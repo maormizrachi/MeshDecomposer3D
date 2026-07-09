@@ -286,29 +286,37 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::pointsEx
     const std::vector<size_t> &indicesToWorkWith) const
 {
     std::vector<ExchangePoint<PointT, PayloadT>> data;
-    data.reserve(allPoints.size());
-    for(size_t pointIdx = 0; pointIdx < allPoints.size(); pointIdx++)
+    data.reserve(indicesToWorkWith.size());
+    for(const size_t &pointIdx : indicesToWorkWith)
     {
         ExchangePoint<PointT, PayloadT> &entry = data.emplace_back();
         entry.originalIndex = pointIdx;
         entry.point = allPoints[pointIdx];
         entry.weight = allWeights[pointIdx];
         entry.payload = payloads[pointIdx];
-        entry.participating = false;
-    }
-
-    for(const size_t &pointIdx : indicesToWorkWith)
-    {
-        data[pointIdx].participating = true;
+        entry.participating = true;
     }
 
     ExchangeAnswer<ExchangePoint<PointT, PayloadT>> answer = dataExchange(data, func, this->comm);
 
     PointsExchangeResult<PointT, PayloadT> toReturn;
 
-    toReturn.indicesToSelf = std::move(answer.indicesToMe);
+    toReturn.indicesToSelf.reserve(answer.indicesToMe.size());
+    for(size_t localIdx : answer.indicesToMe)
+    {
+        toReturn.indicesToSelf.push_back(indicesToWorkWith[localIdx]);
+    }
+
     toReturn.sentProcessors = std::move(answer.processesSend);
-    toReturn.sentIndicesToProcessors = std::move(answer.indicesToProcesses);
+    toReturn.sentIndicesToProcessors.resize(answer.indicesToProcesses.size());
+    for(size_t i = 0; i < answer.indicesToProcesses.size(); ++i)
+    {
+        toReturn.sentIndicesToProcessors[i].reserve(answer.indicesToProcesses[i].size());
+        for(size_t localIdx : answer.indicesToProcesses[i])
+        {
+            toReturn.sentIndicesToProcessors[i].push_back(indicesToWorkWith[localIdx]);
+        }
+    }
 
     const std::vector<ExchangePoint<PointT, PayloadT>> &ans = answer.output;
     toReturn.newPoints.reserve(ans.size());
