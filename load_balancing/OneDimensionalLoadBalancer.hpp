@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -29,7 +30,16 @@ public:
         : LoadBalancer<PointT>(comm), ll_(ll), ur_(ur), axis_(axis)
     {}
 
+    OneDimensionalLoadBalancer(const PointT &ll, const PointT &ur, Axis axis, const std::vector<double> &bins, const MPI_Comm &comm = MPI_COMM_WORLD)
+        : LoadBalancer<PointT>(comm), ll_(ll), ur_(ur), axis_(axis), bins_(bins)
+    {}
+
     ~OneDimensionalLoadBalancer() override = default;
+
+    std::shared_ptr<LoadBalancer<PointT>> clone() const override
+    {
+        return std::make_shared<OneDimensionalLoadBalancer<PointT>>(this->ll_, this->ur_, this->axis_, this->bins_, this->comm);
+    }
 
     double Project(const PointT &point) const
     {
@@ -112,8 +122,15 @@ public:
 
     std::string getTypeName() const override { return type_name; }
 
-    Axis GetAxis() const { return axis_; }
-    const std::vector<double> &GetBins() const { return bins_; }
+    Axis GetAxis() const { return this->axis_; }
+    const std::vector<double> &GetBins() const { return this->bins_; }
+    const PointT &GetLowerLeft() const { return this->ll_; }
+    const PointT &GetUpperRight() const { return this->ur_; }
+
+    void SetBins(const std::vector<double> &bins)
+    {
+        this->bins_ = bins;
+    }
 
 private:
     PointT ll_, ur_;

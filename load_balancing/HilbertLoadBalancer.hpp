@@ -69,7 +69,7 @@ public:
 
     void rebalance(const std::vector<PointT> &points, const std::vector<double> &weights) override;
 
-    std::shared_ptr<HilbertLoadBalancer<PointT>> clone(void) const;
+    std::shared_ptr<LoadBalancer<PointT>> clone(void) const override;
 
     curve_index_t getCurveIndex(const PointT &point) const override;
 
@@ -294,9 +294,9 @@ void HilbertLoadBalancer<PointT>::setIndexing(const std::shared_ptr<const Kernel
 }
 
 template<typename PointT>
-std::shared_ptr<HilbertLoadBalancer<PointT>> HilbertLoadBalancer<PointT>::clone(void) const
+std::shared_ptr<LoadBalancer<PointT>> HilbertLoadBalancer<PointT>::clone(void) const
 {
-    auto clonedConvertor = this->convertor
+    std::shared_ptr<HilbertConvertor3D<PointT>> clonedConvertor = this->convertor
         ? std::dynamic_pointer_cast<HilbertConvertor3D<PointT>>(this->convertor->clone())
         : nullptr;
     return std::make_shared<HilbertLoadBalancer<PointT>>(clonedConvertor, this->indexing, this->boundaries);

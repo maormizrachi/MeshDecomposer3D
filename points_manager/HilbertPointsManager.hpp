@@ -11,6 +11,7 @@
 #include "../environment/hilbert/DistributedOctEnvAgent.hpp"
 #include "../environment/hilbert/HilbertCurveEnvAgent.hpp"
 #include "../environment/hilbert/HilbertTreeEnvAgent.hpp"
+#include "../environment/PlainDistributedOctEnvAgent.hpp"
 #include "../error.hpp"
 #include "../kernels/Identity.hpp"
 #include "../load_balancing/HilbertLoadBalancer.hpp"
@@ -47,9 +48,10 @@ public:
 
     std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> getIndexing() const
     {
-        if(this->loadBalancer != nullptr)
+        std::shared_ptr<HilbertLoadBalancer<PointT>> hilbertLoadBalancer = this->GetHilbertLoadBalancer();
+        if(hilbertLoadBalancer != nullptr)
         {
-            return this->loadBalancer->getIndexing();
+            return hilbertLoadBalancer->getIndexing();
         }
         return this->pendingIndexing_;
     }
@@ -68,9 +70,17 @@ private:
         const std::vector<size_t> &indicesToWorkWith,
         bool noExchange);
 
-    std::shared_ptr<HilbertLoadBalancer<PointT>> loadBalancer = nullptr;
-    std::shared_ptr<HilbertCurveEnvironmentAgent<PointT>> envAgent = nullptr;
+    std::shared_ptr<HilbertLoadBalancer<PointT>> GetHilbertLoadBalancer() const
+    {
+        return std::dynamic_pointer_cast<HilbertLoadBalancer<PointT>>(this->loadBalancer);
+    }
+
+    void CreateEnvironmentAgent(const std::vector<PointT> &points);
+
+    std::shared_ptr<LoadBalancer<PointT>> loadBalancer = nullptr;
+    std::shared_ptr<EnvironmentAgent<PointT>> envAgent = nullptr;
     std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> pendingIndexing_ = nullptr;
+    std::vector<PointT> lastPoints;
     bool customIndexingIsSet = false;
 };
 
@@ -80,15 +90,51 @@ HilbertPointsManager<PointT, PayloadT>::HilbertPointsManager(const PointT &ll, c
 {}
 
 template<typename PointT, typename PayloadT>
+void HilbertPointsManager<PointT, PayloadT>::CreateEnvironmentAgent(const std::vector<PointT> &points)
+{
+    std::shared_ptr<HilbertLoadBalancer<PointT>> hilbertLoadBalancer = this->GetHilbertLoadBalancer();
+    if(hilbertLoadBalancer != nullptr || this->loadBalancer == nullptr)
+    {
+        if(this->customIndexingIsSet)
+        {
+            this->envAgent = std::make_shared<DistributedOctEnvironmentAgent<PointT>>(
+                this->ll, this->ur, points, hilbertLoadBalancer, this->comm);
+        }
+        else
+        {
+            this->envAgent = std::make_shared<HilbertTreeEnvironmentAgent<PointT>>(
+                this->ll, this->ur, hilbertLoadBalancer, this->comm);
+        }
+        return;
+    }
+    this->envAgent = std::make_shared<LoadBalancerEnvironmentAgent<PointT>>(
+        this->ll, this->ur, points, this->loadBalancer, this->comm);
+}
+
+template<typename PointT, typename PayloadT>
 std::shared_ptr<PointsManager<PointT, PayloadT>> HilbertPointsManager<PointT, PayloadT>::clone(void) const
 {
     std::shared_ptr<HilbertPointsManager<PointT, PayloadT>> clone =
         std::make_shared<HilbertPointsManager<PointT, PayloadT>>(this->ll, this->ur, this->comm);
 
-    clone->loadBalancer = std::dynamic_pointer_cast<HilbertLoadBalancer<PointT>>(this->loadBalancer->clone());
-    clone->envAgent = this->envAgent->clone(clone->loadBalancer);
+    clone->loadBalancer = this->loadBalancer->clone();
     clone->customIndexingIsSet = this->customIndexingIsSet;
     clone->pendingIndexing_ = this->pendingIndexing_;
+    clone->lastPoints = this->lastPoints;
+    if(this->envAgent != nullptr)
+    {
+        std::shared_ptr<HilbertLoadBalancer<PointT>> hilbertClone = clone->GetHilbertLoadBalancer();
+        HilbertCurveEnvironmentAgent<PointT> *hilbertEnv =
+            dynamic_cast<HilbertCurveEnvironmentAgent<PointT> *>(this->envAgent.get());
+        if(hilbertEnv != nullptr && hilbertClone != nullptr)
+        {
+            clone->envAgent = hilbertEnv->clone(hilbertClone);
+        }
+        else
+        {
+            clone->CreateEnvironmentAgent(clone->lastPoints);
+        }
+    }
     return clone;
 }
 
@@ -123,6 +169,7 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
                 allPoints, allWeights, payloads, indicesToWorkWith);
         }
         this->envAgent->onExchange(exchangeResult.newPoints);
+        this->lastPoints = exchangeResult.newPoints;
     }
     else
     {
@@ -135,28 +182,48 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
 template<typename PointT, typename PayloadT>
 void HilbertPointsManager<PointT, PayloadT>::setLoadBalancer(std::shared_ptr<LoadBalancer<PointT>> newLoadBalancer)
 {
-    HilbertLoadBalancer<PointT> *hilbertLoadBalancer =
-        dynamic_cast<HilbertLoadBalancer<PointT> *>(newLoadBalancer.get());
-    if(hilbertLoadBalancer == nullptr)
+    if(newLoadBalancer == nullptr)
     {
-        throw DomainDecompError("HilbertPointsManager::setLoadBalancer: given load balancer is not a HilbertLoadBalancer");
+        throw DomainDecompError("HilbertPointsManager::setLoadBalancer: load balancer is null");
     }
     if(this->rank == 0)
     {
         std::cout << "Restoring Load Balancer" << std::endl;
     }
 
-    this->loadBalancer = std::dynamic_pointer_cast<HilbertLoadBalancer<PointT>>(newLoadBalancer);
+    this->loadBalancer = std::move(newLoadBalancer);
 
-    auto indexing = this->loadBalancer->getIndexing();
-    if(indexing && dynamic_cast<const Kernelization3D::Identity<PointT> *>(indexing.get()) == nullptr)
+    std::shared_ptr<HilbertLoadBalancer<PointT>> hilbertLoadBalancer = this->GetHilbertLoadBalancer();
+    if(hilbertLoadBalancer != nullptr)
     {
-        this->customIndexingIsSet = true;
+        std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> indexing = hilbertLoadBalancer->getIndexing();
+        if(indexing && dynamic_cast<const Kernelization3D::Identity<PointT> *>(indexing.get()) == nullptr)
+        {
+            this->customIndexingIsSet = true;
+        }
+
+        HilbertCurveEnvironmentAgent<PointT> *hilbertEnv =
+            dynamic_cast<HilbertCurveEnvironmentAgent<PointT> *>(this->envAgent.get());
+        if(hilbertEnv != nullptr)
+        {
+            hilbertEnv->setLoadBalancer(hilbertLoadBalancer);
+        }
+        else if(this->envAgent != nullptr)
+        {
+            this->CreateEnvironmentAgent(this->lastPoints);
+        }
+        return;
     }
 
-    if(this->envAgent != nullptr)
+    LoadBalancerEnvironmentAgent<PointT> *genericEnv =
+        dynamic_cast<LoadBalancerEnvironmentAgent<PointT> *>(this->envAgent.get());
+    if(genericEnv != nullptr)
     {
-        this->envAgent->setLoadBalancer(this->loadBalancer);
+        genericEnv->setLoadBalancer(this->loadBalancer);
+    }
+    else if(this->envAgent != nullptr)
+    {
+        this->CreateEnvironmentAgent(this->lastPoints);
     }
 }
 
@@ -178,9 +245,11 @@ void HilbertPointsManager<PointT, PayloadT>::rebalance(
     const std::vector<double> &weights)
 {
     this->loadBalancer->rebalance(points, weights);
-    if(this->envAgent != nullptr)
+    HilbertCurveEnvironmentAgent<PointT> *hilbertEnv =
+        dynamic_cast<HilbertCurveEnvironmentAgent<PointT> *>(this->envAgent.get());
+    if(hilbertEnv != nullptr)
     {
-        this->envAgent->setLoadBalancer(this->loadBalancer);
+        hilbertEnv->setLoadBalancer(this->GetHilbertLoadBalancer());
     }
 }
 
@@ -189,9 +258,10 @@ void HilbertPointsManager<PointT, PayloadT>::setIndexing(
     std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> const &indexing)
 {
     this->customIndexingIsSet = true;
-    if(this->loadBalancer != nullptr)
+    std::shared_ptr<HilbertLoadBalancer<PointT>> hilbertLoadBalancer = this->GetHilbertLoadBalancer();
+    if(hilbertLoadBalancer != nullptr)
     {
-        this->loadBalancer->setIndexing(indexing);
+        hilbertLoadBalancer->setIndexing(indexing);
     }
     else
     {
@@ -210,11 +280,14 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
 {
     if(not noExchange)
     {
-        auto indexing = (this->pendingIndexing_ != nullptr)
-            ? this->pendingIndexing_
-            : std::make_shared<const Kernelization3D::Identity<PointT>>();
-        this->pendingIndexing_ = nullptr;
-        this->loadBalancer = std::make_shared<HilbertLoadBalancer<PointT>>(this->ll, this->ur, points, indexing);
+        if(this->loadBalancer == nullptr)
+        {
+            std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> indexing = (this->pendingIndexing_ != nullptr)
+                ? this->pendingIndexing_
+                : std::make_shared<const Kernelization3D::Identity<PointT>>();
+            this->pendingIndexing_ = nullptr;
+            this->loadBalancer = std::make_shared<HilbertLoadBalancer<PointT>>(this->ll, this->ur, points, indexing);
+        }
         this->rebalance(points, weights);
     }
 
@@ -238,17 +311,8 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
             points, weights, payloads, indicesToWorkWith);
     }
 
-    if(this->customIndexingIsSet)
-    {
-        this->envAgent = std::make_shared<DistributedOctEnvironmentAgent<PointT>>(
-            this->ll, this->ur, exchangeResult.newPoints, this->loadBalancer, this->comm);
-    }
-    else
-    {
-        this->envAgent = std::make_shared<HilbertTreeEnvironmentAgent<PointT>>(
-            this->ll, this->ur, this->loadBalancer, this->comm);
-    }
-
+    this->lastPoints = exchangeResult.newPoints;
+    this->CreateEnvironmentAgent(this->lastPoints);
     return exchangeResult;
 }
 

@@ -3,6 +3,7 @@
 
 #ifdef RICH_MPI
 
+#include <memory>
 #include <mpi.h>
 #include <mpi_utils/mpi_commands.hpp>
 #include <string>
@@ -28,6 +29,8 @@ public:
     virtual std::string getTypeName() const = 0;
 
     virtual int getOwner(const PointT &point) const = 0;
+
+    virtual std::shared_ptr<LoadBalancer<PointT>> clone() const = 0;
 
     virtual ~LoadBalancer() = default;
 
