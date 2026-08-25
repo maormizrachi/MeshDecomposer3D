@@ -106,12 +106,25 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
     {
         if(noExchange)
         {
+            std::vector<size_t> allIndices(allPoints.size());
+            std::iota(allIndices.begin(), allIndices.end(), size_t(0));
             exchangeResult = this->pointsExchange(
                 [this](const ExchangePoint<PointT, PayloadT> &)
                 {
                     return this->rank;
                 },
-                allPoints, allWeights, payloads, indicesToWorkWith);
+                allPoints, allWeights, payloads, allIndices);
+
+            // A partial build still needs every owned generator as a possible
+            // geometric neighbor.  Suppressing ownership exchange must only
+            // select which cells are built, not discard passive generators
+            // from the local range search.
+            std::vector<unsigned char> participating(allPoints.size(), 0);
+            for(size_t index : indicesToWorkWith)
+                participating.at(index) = 1;
+            for(size_t i = 0; i < exchangeResult.newIndices.size(); ++i)
+                exchangeResult.participatingIndices[i] =
+                    participating.at(exchangeResult.newIndices[i]) != 0;
         }
         else
         {
