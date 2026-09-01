@@ -85,6 +85,10 @@ public:
 
     typename EnvironmentAgent<PointT>::RanksSet getIntersectingRanks(const PointT &center, double radius) const override
     {
+        if(this->loadBalancer_->providesIntersectingRanks())
+        {
+            return this->loadBalancer_->getIntersectingRanks(center, radius);
+        }
         return this->octAgent_.getIntersectingRanks(center, radius);
     }
 

@@ -4,10 +4,13 @@
 #ifdef RICH_MPI
 
 #include <memory>
+#include <boost/container/flat_set.hpp>
 #include <mpi.h>
 #include <mpi_utils/mpi_commands.hpp>
 #include <string>
 #include <vector>
+
+#include "../error.hpp"
 
 template<typename PointT>
 class LoadBalancer
@@ -29,6 +32,18 @@ public:
     virtual std::string getTypeName() const = 0;
 
     virtual int getOwner(const PointT &point) const = 0;
+
+    virtual bool providesIntersectingRanks() const
+    {
+        return false;
+    }
+
+    virtual boost::container::flat_set<int> getIntersectingRanks(const PointT &center, double radius) const
+    {
+        DomainDecompError eo("LoadBalancer::getIntersectingRanks: not implemented for balancer type");
+        eo.addEntry("type", getTypeName());
+        throw eo;
+    }
 
     virtual std::shared_ptr<LoadBalancer<PointT>> clone() const = 0;
 

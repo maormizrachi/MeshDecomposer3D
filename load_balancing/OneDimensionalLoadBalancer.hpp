@@ -4,10 +4,13 @@
 #ifdef RICH_MPI
 
 #include <algorithm>
+#include <boost/container/flat_set.hpp>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <spatial_ds/utils/geometry.hpp>
 
 #include "../balance/weightedBalance3.hpp"
 #include "../error.hpp"
@@ -74,6 +77,52 @@ public:
         size_t index = static_cast<size_t>(
             std::distance(bins_.cbegin(), std::upper_bound(bins_.cbegin(), bins_.cend(), coord)));
         return static_cast<int>(std::min<size_t>(index, static_cast<size_t>(this->size - 1)));
+    }
+
+    bool providesIntersectingRanks() const override
+    {
+        return true;
+    }
+
+    boost::container::flat_set<int> getIntersectingRanks(const PointT &center, double radius) const override
+    {
+        if(bins_.size() != static_cast<size_t>(this->size))
+        {
+            DomainDecompError eo("OneDimensionalLoadBalancer: bin count does not match MPI size");
+            eo.addEntry("Bin count", bins_.size());
+            eo.addEntry("MPI size", this->size);
+            throw eo;
+        }
+
+        boost::container::flat_set<int> result;
+        Sphere<PointT> sphere(center, radius);
+        for(int candidateRank = 0; candidateRank < this->size; ++candidateRank)
+        {
+            PointT slabLower = ll_;
+            PointT slabUpper = ur_;
+            double lower = candidateRank == 0 ? Project(ll_) : bins_[candidateRank - 1];
+            double upper = candidateRank == this->size - 1 ? Project(ur_) : bins_[candidateRank];
+            switch(axis_)
+            {
+                case Axis::X:
+                    slabLower.x = lower;
+                    slabUpper.x = upper;
+                    break;
+                case Axis::Y:
+                    slabLower.y = lower;
+                    slabUpper.y = upper;
+                    break;
+                case Axis::Z:
+                    slabLower.z = lower;
+                    slabUpper.z = upper;
+                    break;
+            }
+            if(SphereBoxIntersection(BoundingBox<PointT>(slabLower, slabUpper), sphere))
+            {
+                result.insert(candidateRank);
+            }
+        }
+        return result;
     }
 
     void changeBox(const std::pair<PointT, PointT> &newBox) override
