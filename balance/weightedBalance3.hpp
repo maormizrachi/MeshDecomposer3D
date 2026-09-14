@@ -123,6 +123,15 @@ std::vector<T> weightedBalance3RootGather(std::vector<WeightedBalance3Pair<T>> l
         return {};
     }
 
+    // Check before multiplying/narrowing, and have every rank reject together.
+    const size_t maxBytes = static_cast<size_t>(std::numeric_limits<int>::max());
+    int localOverflow = localPairs.size() > maxBytes / sizeof(WeightedBalance3Pair<T>);
+    int anyOverflow = 0;
+    MPI_Allreduce(&localOverflow, &anyOverflow, 1, MPI_INT, MPI_MAX, comm);
+    if(anyOverflow)
+    {
+        throw DomainDecompError("weightedBalance3RootGather: local border data exceeds INT_MAX bytes");
+    }
     int localBytes = static_cast<int>(localPairs.size() * sizeof(WeightedBalance3Pair<T>));
     std::vector<int> recvBytes, displacements;
     if(rank == 0)
@@ -133,6 +142,29 @@ std::vector<T> weightedBalance3RootGather(std::vector<WeightedBalance3Pair<T>> l
 
     MPI_Gather(&localBytes, 1, MPI_INT,
                rank == 0 ? recvBytes.data() : nullptr, 1, MPI_INT, 0, comm);
+
+    // Root owns the gathered counts, but no rank may enter Gatherv if their
+    // sum cannot be represented by its int displacements/counts.
+    int totalOverflow = 0;
+    if(rank == 0)
+    {
+        size_t totalBytesCheck = 0;
+        for(rank_t r = 0; r < size; r++)
+        {
+            const size_t bytes = static_cast<size_t>(recvBytes[static_cast<size_t>(r)]);
+            if(bytes > maxBytes - totalBytesCheck)
+            {
+                totalOverflow = 1;
+                break;
+            }
+            totalBytesCheck += bytes;
+        }
+    }
+    MPI_Bcast(&totalOverflow, 1, MPI_INT, 0, comm);
+    if(totalOverflow)
+    {
+        throw DomainDecompError("weightedBalance3RootGather: gathered border data exceeds INT_MAX bytes");
+    }
 
     std::vector<WeightedBalance3Pair<T>> allPairs;
     if(rank == 0)
