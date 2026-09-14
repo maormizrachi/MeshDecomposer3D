@@ -288,7 +288,29 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
             this->pendingIndexing_ = nullptr;
             this->loadBalancer = std::make_shared<HilbertLoadBalancer<PointT>>(this->ll, this->ur, points, indexing);
         }
-        this->rebalance(points, weights);
+        // Rebalance must see each point once globally.  Callers that pass local
+        // arrays (MadVoro) are unaffected by the slicing below, but callers that
+        // pass the global array plus an ownership slice (MadCart::BuildParallel)
+        // would otherwise have every rank contribute every point: the border
+        // gather then moves ranks x N pairs and overflows its int byte count.
+        std::vector<PointT> ownedPoints;
+        std::vector<double> ownedWeights;
+        ownedPoints.reserve(indicesToWorkWith.size());
+        ownedWeights.reserve(indicesToWorkWith.size());
+        for(const size_t &pointIdx : indicesToWorkWith)
+        {
+            if(pointIdx >= points.size())
+            {
+                continue;
+            }
+            ownedPoints.push_back(points[pointIdx]);
+            if(pointIdx < weights.size())
+            {
+                ownedWeights.push_back(weights[pointIdx]);
+            }
+        }
+        this->rebalance(ownedPoints,
+                        ownedWeights.size() == ownedPoints.size() ? ownedWeights : std::vector<double>());
     }
 
     PointsExchangeResult<PointT, PayloadT> exchangeResult;

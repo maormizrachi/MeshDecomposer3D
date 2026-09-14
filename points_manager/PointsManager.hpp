@@ -263,7 +263,29 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::update(
         {
             throw DomainDecompError("PointsManager::update: environment agent is null during rebalance");
         }
-        this->rebalance(allPoints, allWeights);
+        // Rebalance must see each point once globally.  Callers that pass local
+        // arrays (MadVoro) already satisfy that, but callers that pass the global
+        // array plus an ownership slice (MadCart::BuildParallel) would otherwise
+        // contribute every point from every rank: the border gather then moves
+        // ranks x N pairs, which is both wasteful and overflows the int byte count
+        // in weightedBalance3RootGather at high rank counts.  Restricting to the
+        // owned slice yields the same borders, since uniform duplication does not
+        // move a cumulative-weight split.
+        std::vector<PointT> ownedPoints;
+        std::vector<double> ownedPointWeights;
+        ownedPoints.reserve(indicesToWorkWith.size());
+        ownedPointWeights.reserve(indicesToWorkWith.size());
+        for(const size_t &pointIdx : indicesToWorkWith)
+        {
+            ownedPoints.push_back(allPoints[pointIdx]);
+            if(pointIdx < allWeights.size())
+            {
+                ownedPointWeights.push_back(allWeights[pointIdx]);
+            }
+        }
+        this->rebalance(ownedPoints,
+                        ownedPointWeights.size() == ownedPoints.size() ? ownedPointWeights
+                                                                       : std::vector<double>());
         result = this->exchange(allPoints, allWeights, payloads, indicesToWorkWith, not doExchange);
         this->totalWeight = std::accumulate(result.newWeights.cbegin(), result.newWeights.cend(), 0.0);
         end = std::chrono::high_resolution_clock::now();
