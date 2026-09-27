@@ -33,6 +33,10 @@ public:
 
     virtual inline int getCellOwner(curve_index_t d) const
     {
+        if(!this->loadBalancer->positionalOwnership())
+        {
+            return this->loadBalancer->getOwnerOfIndex(d);
+        }
         size_t index = static_cast<size_t>(std::distance(
             this->loadBalancer->boundaries.cbegin(),
             std::upper_bound(this->loadBalancer->boundaries.cbegin(),

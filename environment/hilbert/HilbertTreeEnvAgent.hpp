@@ -22,7 +22,7 @@ public:
         this->hilbertTree = std::make_shared<HilbertTree_Type>(
             std::dynamic_pointer_cast<HilbertRectangularConvertor3D<PointT>>(this->loadBalancer->getConvertor()),
             this->loadBalancer->getBoundaries(),
-            this->comm);
+            this->comm, this->loadBalancer->segmentOwner);
     }
 
     inline ~HilbertTreeEnvironmentAgent() override
@@ -50,7 +50,7 @@ public:
         this->hilbertTree = std::make_shared<HilbertTree_Type>(
             std::dynamic_pointer_cast<HilbertRectangularConvertor3D<PointT>>(this->loadBalancer->getConvertor()),
             this->loadBalancer->getBoundaries(),
-            this->comm);
+            this->comm, this->loadBalancer->segmentOwner);
     }
 
     template<typename U>

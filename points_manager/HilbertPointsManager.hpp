@@ -68,10 +68,18 @@ private:
         const std::vector<size_t> &indicesToWorkWith,
         bool noExchange);
 
+    // Chooses and refreshes the sphere-rank routing agent after an exchange
+    // step. Collective on this->comm.
+    void refreshEnvironmentAgent(const std::vector<PointT> &newPoints, bool noExchange);
+
     std::shared_ptr<HilbertLoadBalancer<PointT>> loadBalancer = nullptr;
     std::shared_ptr<HilbertCurveEnvironmentAgent<PointT>> envAgent = nullptr;
     std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> pendingIndexing_ = nullptr;
     bool customIndexingIsSet = false;
+    // Set once a build ran with the point exchange suppressed. From then on the
+    // ranks' points may sit outside their nominal Hilbert ranges, so routing
+    // must follow the actual point positions.
+    bool pointsMayLeaveHilbertRanges = false;
 };
 
 template<typename PointT, typename PayloadT>
@@ -88,6 +96,7 @@ std::shared_ptr<PointsManager<PointT, PayloadT>> HilbertPointsManager<PointT, Pa
     clone->loadBalancer = std::dynamic_pointer_cast<HilbertLoadBalancer<PointT>>(this->loadBalancer->clone());
     clone->envAgent = this->envAgent->clone(clone->loadBalancer);
     clone->customIndexingIsSet = this->customIndexingIsSet;
+    clone->pointsMayLeaveHilbertRanges = this->pointsMayLeaveHilbertRanges;
     clone->pendingIndexing_ = this->pendingIndexing_;
     return clone;
 }
@@ -135,7 +144,7 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
                 },
                 allPoints, allWeights, payloads, indicesToWorkWith);
         }
-        this->envAgent->onExchange(exchangeResult.newPoints);
+        this->refreshEnvironmentAgent(exchangeResult.newPoints, noExchange);
     }
     else
     {
@@ -143,6 +152,41 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
     }
 
     return exchangeResult;
+}
+
+template<typename PointT, typename PayloadT>
+void HilbertPointsManager<PointT, PayloadT>::refreshEnvironmentAgent(
+    const std::vector<PointT> &newPoints, bool noExchange)
+{
+    // `noExchange` is agreed collectively by the caller (Voronoi3D reduces it
+    // with MPI_LAND), so every rank takes the same branch here.
+    if(noExchange)
+    {
+        this->pointsMayLeaveHilbertRanges = true;
+    }
+    bool const routeByPositions = this->customIndexingIsSet || this->pointsMayLeaveHilbertRanges;
+    bool const haveOctAgent =
+        std::dynamic_pointer_cast<DistributedOctEnvironmentAgent<PointT>>(this->envAgent) != nullptr;
+    if(routeByPositions && !haveOctAgent)
+    {
+        // The Hilbert-range tree answers "which ranks may hold points inside
+        // this sphere" from the load balancer's nominal ownership. That is only
+        // true right after a real exchange. A suppressed exchange leaves points
+        // where they are while the mesh moves, so ghost range queries would be
+        // sent to the nominal owner of a region instead of the rank that holds
+        // the points. The distributed oct tree is built from the actual points
+        // and is refreshed on every exchange step.
+        if(this->rank == 0)
+        {
+            std::cout << "MeshDecomposer: routing sphere-rank queries by actual point positions "
+                         "(distributed oct tree) because the point exchange was suppressed"
+                      << std::endl;
+        }
+        this->envAgent = std::make_shared<DistributedOctEnvironmentAgent<PointT>>(
+            this->ll, this->ur, newPoints, this->loadBalancer, this->comm);
+        return;
+    }
+    this->envAgent->onExchange(newPoints);
 }
 
 template<typename PointT, typename PayloadT>
@@ -176,12 +220,16 @@ void HilbertPointsManager<PointT, PayloadT>::setLoadBalancer(std::shared_ptr<Loa
 template<typename PointT, typename PayloadT>
 std::shared_ptr<LoadBalancer<PointT>> HilbertPointsManager<PointT, PayloadT>::getLoadBalancer(void)
 {
+    if(!this->loadBalancer)
+        return nullptr;
     return this->loadBalancer->clone();
 }
 
 template<typename PointT, typename PayloadT>
 const std::shared_ptr<LoadBalancer<PointT>> HilbertPointsManager<PointT, PayloadT>::getLoadBalancer(void) const
 {
+    if(!this->loadBalancer)
+        return nullptr;
     return this->loadBalancer->clone();
 }
 
@@ -251,8 +299,18 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
             points, weights, payloads, indicesToWorkWith);
     }
 
-    if(this->customIndexingIsSet)
+    if(noExchange)
     {
+        this->pointsMayLeaveHilbertRanges = true;
+    }
+    if(this->customIndexingIsSet || this->pointsMayLeaveHilbertRanges)
+    {
+        if(this->pointsMayLeaveHilbertRanges && this->rank == 0)
+        {
+            std::cout << "MeshDecomposer: routing sphere-rank queries by actual point positions "
+                         "(distributed oct tree) because the point exchange was suppressed"
+                      << std::endl;
+        }
         this->envAgent = std::make_shared<DistributedOctEnvironmentAgent<PointT>>(
             this->ll, this->ur, exchangeResult.newPoints, this->loadBalancer, this->comm);
     }

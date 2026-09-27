@@ -36,6 +36,35 @@ namespace
     {
         std::sort(boundaries.begin(), boundaries.end());
     }
+
+    // Segmented ownership keeps each segment's owner with its closing
+    // boundary through the sort, so a rank keeps its physical ranges across a
+    // box change.  Positional ownership (no owners) is the plain sort above,
+    // where a crossing redefines which rank owns which range by position.
+    inline void SortHilbertBoundaries(std::vector<curve_index_t> &boundaries, std::vector<int> &owners)
+    {
+        if(owners.empty())
+        {
+            SortHilbertBoundaries(boundaries);
+            return;
+        }
+        if(owners.size() != boundaries.size())
+        {
+            throw DomainDecompError("SortHilbertBoundaries: segment owners do not match the boundaries");
+        }
+        std::vector<std::pair<curve_index_t, int>> pairs(boundaries.size());
+        for(size_t i = 0; i < boundaries.size(); ++i)
+        {
+            pairs[i] = {boundaries[i], owners[i]};
+        }
+        std::stable_sort(pairs.begin(), pairs.end(),
+                         [](const std::pair<curve_index_t, int> &a, const std::pair<curve_index_t, int> &b) { return a.first < b.first; });
+        for(size_t i = 0; i < pairs.size(); ++i)
+        {
+            boundaries[i] = pairs[i].first;
+            owners[i] = pairs[i].second;
+        }
+    }
 }
 
 template<typename PointT>
@@ -55,10 +84,30 @@ public:
 
     HilbertLoadBalancer(std::shared_ptr<HilbertConvertor3D<PointT>> convertor,
                         std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> indexing,
-                        const std::vector<curve_index_t> &boundaries)
+                        const std::vector<curve_index_t> &boundaries,
+                        const std::vector<int> &segmentOwner = std::vector<int>())
         : CurveLoadBalancer<PointT>(boundaries), convertor(std::move(convertor)), indexing(std::move(indexing))
     {
-        SortHilbertBoundaries(this->boundaries);
+        this->validateSegmentOwners(boundaries, segmentOwner);
+        this->segmentOwner = segmentOwner;
+        SortHilbertBoundaries(this->boundaries, this->segmentOwner);
+    }
+
+    // Installs a segmented (or, with empty owners, positional) partition.
+    void setSegments(const std::vector<curve_index_t> &newBoundaries, const std::vector<int> &newOwners)
+    {
+        this->validateSegmentOwners(newBoundaries, newOwners);
+        this->boundaries = newBoundaries;
+        this->segmentOwner = newOwners;
+        SortHilbertBoundaries(this->boundaries, this->segmentOwner);
+    }
+
+    inline const std::vector<int> &getSegmentOwner(void) const { return this->segmentOwner; }
+
+    // Same partition: equal boundaries and equal owners.
+    inline bool sameAssignment(const HilbertLoadBalancer<PointT> &other) const
+    {
+        return this->boundaries == other.boundaries && this->segmentOwner == other.segmentOwner;
     }
 
     // Duplicates are allowed and are meaningful for empty/zero-width rank regions.
@@ -68,6 +117,13 @@ public:
     std::string getTypeName() const override { return type_name; }
 
     void rebalance(const std::vector<PointT> &points, const std::vector<double> &weights) override;
+
+    // Collective.  Cuts the curve into piecesPerRank * size pieces of equal
+    // weight and deals them out in turn (piece i to rank i mod size), so a
+    // rank owns piecesPerRank disjoint ranges spread along the curve and a
+    // cluster of work covering several consecutive pieces lands on several
+    // ranks.  piecesPerRank <= 1 is rebalance().
+    void rebalanceInterleaved(const std::vector<PointT> &points, const std::vector<double> &weights, int piecesPerRank);
 
     std::shared_ptr<HilbertLoadBalancer<PointT>> clone(void) const;
 
@@ -90,6 +146,36 @@ public:
     inline size_t getOrder(void) const { return this->convertor->getOrder(); }
 
 private:
+    // Owners must match the boundaries one to one and name ranks of this
+    // communicator.  Inputs are replicated (plans computed identically on
+    // every rank, restart data read by every rank), so every rank throws
+    // together.
+    void validateSegmentOwners(const std::vector<curve_index_t> &newBoundaries, const std::vector<int> &newOwners) const
+    {
+        if(newOwners.empty())
+        {
+            return;
+        }
+        if(newOwners.size() != newBoundaries.size())
+        {
+            DomainDecompError eo("HilbertLoadBalancer: segment owners do not match the boundaries");
+            eo.addEntry("segment owners", newOwners.size());
+            eo.addEntry("boundaries", newBoundaries.size());
+            throw eo;
+        }
+        for(size_t i = 0; i < newOwners.size(); ++i)
+        {
+            if(newOwners[i] < 0 || newOwners[i] >= this->size)
+            {
+                DomainDecompError eo("HilbertLoadBalancer: segment owner is not a rank of the communicator");
+                eo.addEntry("segment", i);
+                eo.addEntry("owner", newOwners[i]);
+                eo.addEntry("ranks", this->size);
+                throw eo;
+            }
+        }
+    }
+
     std::shared_ptr<HilbertConvertor3D<PointT>> convertor;
     std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> indexing;
 
@@ -168,11 +254,14 @@ void HilbertLoadBalancer<PointT>::rebalance(const std::vector<PointT> &points, c
         indices.push_back(this->convertor->xyz2d((*this->indexing)(point)));
     }
 
-    if(this->rank == 0)
+    if(this->rank == 0 &&
+       mesh_decomposer_runtime_log_detail::Detailed())
     {
         std::cout << "Running rebalancing" << std::endl;
     }
     this->boundaries = getWeightedBorders3(indices, weights, std::less<curve_index_t>{}, this->comm);
+    // A weighted rebalance cuts one contiguous range per rank.
+    this->segmentOwner.clear();
     SortHilbertBoundaries(this->boundaries);
     if(this->boundaries.empty())
     {
@@ -193,6 +282,41 @@ void HilbertLoadBalancer<PointT>::rebalance(const std::vector<PointT> &points, c
         }
         SortHilbertBoundaries(this->boundaries);
     }
+}
+
+template<typename PointT>
+void HilbertLoadBalancer<PointT>::rebalanceInterleaved(const std::vector<PointT> &points, const std::vector<double> &weights, int piecesPerRank)
+{
+    if(piecesPerRank <= 1)
+    {
+        this->rebalance(points, weights);
+        return;
+    }
+    if(this->convertor == nullptr)
+    {
+        throw DomainDecompError("HilbertLoadBalancer::rebalanceInterleaved: convertor was not initialized yet");
+    }
+    std::vector<curve_index_t> indices;
+    indices.reserve(points.size());
+    for(const PointT &point : points)
+    {
+        indices.push_back(this->convertor->xyz2d((*this->indexing)(point)));
+    }
+    const int pieces = piecesPerRank * this->size;
+    std::vector<curve_index_t> newBoundaries = getWeightedBorders3(indices, weights, std::less<curve_index_t>{}, this->comm, pieces);
+    if(newBoundaries.size() != static_cast<size_t>(pieces))
+    {
+        DomainDecompError eo("HilbertLoadBalancer::rebalanceInterleaved: unexpected piece count");
+        eo.addEntry("pieces", pieces);
+        eo.addEntry("boundaries", newBoundaries.size());
+        throw eo;
+    }
+    std::vector<int> owners(newBoundaries.size());
+    for(size_t piece = 0; piece < owners.size(); ++piece)
+    {
+        owners[piece] = static_cast<int>(piece % static_cast<size_t>(this->size));
+    }
+    this->setSegments(newBoundaries, owners);
 }
 
 template<typename PointT>
@@ -230,7 +354,7 @@ void HilbertLoadBalancer<PointT>::rescale(const PointT &ll, const PointT &ur, co
     {
         this->boundaries[i] = this->convertor->xyz2d(rescaled[i]);
     }
-    SortHilbertBoundaries(this->boundaries);
+    SortHilbertBoundaries(this->boundaries, this->segmentOwner);
 }
 
 template<typename PointT>
@@ -283,7 +407,7 @@ void HilbertLoadBalancer<PointT>::changeBox(const std::pair<PointT, PointT> &new
     {
         this->boundaries[i] = this->convertor->xyz2d(rescaled[i]);
     }
-    SortHilbertBoundaries(this->boundaries);
+    SortHilbertBoundaries(this->boundaries, this->segmentOwner);
 }
 
 template<typename PointT>
@@ -299,7 +423,7 @@ std::shared_ptr<HilbertLoadBalancer<PointT>> HilbertLoadBalancer<PointT>::clone(
     auto clonedConvertor = this->convertor
         ? std::dynamic_pointer_cast<HilbertConvertor3D<PointT>>(this->convertor->clone())
         : nullptr;
-    return std::make_shared<HilbertLoadBalancer<PointT>>(clonedConvertor, this->indexing, this->boundaries);
+    return std::make_shared<HilbertLoadBalancer<PointT>>(clonedConvertor, this->indexing, this->boundaries, this->segmentOwner);
 }
 
 template<typename PointT>

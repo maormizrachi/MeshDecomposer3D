@@ -14,6 +14,7 @@
 #include <mpi.h>
 #include <mpi_utils/mpi_commands.hpp>
 #include "../error.hpp"
+#include "../runtime_log.hpp"
 
 template<typename T>
 struct WeightedBalance3Pair
@@ -111,14 +112,20 @@ double weightedBalance3LocalWeight(const std::vector<WeightedBalance3Pair<T>> &p
         });
 }
 
+// pieces: the number of curve pieces to cut (pieces - 1 borders plus the
+// closing one); 0 means one piece per rank.
 template<typename T, typename Comparator>
-std::vector<T> weightedBalance3RootGather(std::vector<WeightedBalance3Pair<T>> localPairs, const Comparator &comp, const MPI_Comm &comm)
+std::vector<T> weightedBalance3RootGather(std::vector<WeightedBalance3Pair<T>> localPairs, const Comparator &comp, const MPI_Comm &comm, int pieces = 0)
 {
     rank_t rank, size;
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &size);
+    if(pieces <= 0)
+    {
+        pieces = size;
+    }
 
-    if(size <= 1)
+    if(pieces <= 1)
     {
         return {};
     }
@@ -152,7 +159,7 @@ std::vector<T> weightedBalance3RootGather(std::vector<WeightedBalance3Pair<T>> l
                 rank == 0 ? displacements.data() : nullptr,
                 MPI_BYTE, 0, comm);
 
-    std::vector<T> borders(static_cast<size_t>(size - 1));
+    std::vector<T> borders(static_cast<size_t>(pieces - 1));
     if(rank == 0)
     {
         std::sort(allPairs.begin(), allPairs.end(), [&comp](const WeightedBalance3Pair<T> &lhs, const WeightedBalance3Pair<T> &rhs)
@@ -172,9 +179,9 @@ std::vector<T> weightedBalance3RootGather(std::vector<WeightedBalance3Pair<T>> l
 
         double currentWeight = 0;
         size_t pointIndex = 0;
-        for(rank_t targetRank = 1; targetRank < size; targetRank++)
+        for(rank_t targetRank = 1; targetRank < pieces; targetRank++)
         {
-            const double targetWeight = totalWeight * static_cast<double>(targetRank) / static_cast<double>(size);
+            const double targetWeight = totalWeight * static_cast<double>(targetRank) / static_cast<double>(pieces);
             while(pointIndex < allPairs.size() && currentWeight + allPairs[pointIndex].weight <= targetWeight)
             {
                 currentWeight += allPairs[pointIndex].weight;
@@ -195,7 +202,9 @@ std::vector<T> weightedBalance3RootGather(std::vector<WeightedBalance3Pair<T>> l
             }
         }
 
-        std::cout << "Weighted borders determined in 1 pass (root gather fallback)." << std::endl;
+        if(mesh_decomposer_runtime_log_detail::Detailed())
+            std::cout << "Weighted borders determined in 1 pass "
+                      << "(root gather fallback)." << std::endl;
     }
 
     MPI_Bcast(borders.data(), static_cast<int>(borders.size() * sizeof(T)), MPI_BYTE, 0, comm);
@@ -207,15 +216,19 @@ std::vector<T> weightedBalance3RootGather(std::vector<WeightedBalance3Pair<T>> l
 }
 
 template<typename T, typename Comparator>
-std::vector<T> weightedBalance3Direct(std::vector<WeightedBalance3Pair<T>> localPairs, const Comparator &comp, const MPI_Comm &comm)
+std::vector<T> weightedBalance3Direct(std::vector<WeightedBalance3Pair<T>> localPairs, const Comparator &comp, const MPI_Comm &comm, int pieces = 0)
 {
     (void) comp;
 
     rank_t rank, size;
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &size);
+    if(pieces <= 0)
+    {
+        pieces = size;
+    }
 
-    if(size <= 1)
+    if(pieces <= 1)
     {
         return {};
     }
@@ -256,9 +269,9 @@ std::vector<T> weightedBalance3Direct(std::vector<WeightedBalance3Pair<T>> local
     }
 
     std::vector<WeightedBalance3Candidate<T>> localCandidates;
-    for(rank_t targetRank = 1; targetRank < size; targetRank++)
+    for(rank_t targetRank = 1; targetRank < pieces; targetRank++)
     {
-        const double targetWeight = totalWeight * static_cast<double>(targetRank) / static_cast<double>(size);
+        const double targetWeight = totalWeight * static_cast<double>(targetRank) / static_cast<double>(pieces);
         if(targetWeight < weightOffset || targetWeight >= localEndWeight || localPairs.empty())
         {
             continue;
@@ -287,11 +300,11 @@ std::vector<T> weightedBalance3Direct(std::vector<WeightedBalance3Pair<T>> local
                    allCandidates.data(), recvBytes.data(), displacements.data(),
                    MPI_BYTE, comm);
 
-    std::vector<T> borders(static_cast<size_t>(size - 1));
-    std::vector<char> hasBorder(static_cast<size_t>(size - 1), 0);
+    std::vector<T> borders(static_cast<size_t>(pieces - 1));
+    std::vector<char> hasBorder(static_cast<size_t>(pieces - 1), 0);
     for(const WeightedBalance3Candidate<T> &candidate : allCandidates)
     {
-        if(candidate.order <= 0 || candidate.order >= size)
+        if(candidate.order <= 0 || candidate.order >= pieces)
         {
             continue;
         }
@@ -304,10 +317,10 @@ std::vector<T> weightedBalance3Direct(std::vector<WeightedBalance3Pair<T>> local
     const bool complete = std::all_of(hasBorder.cbegin(), hasBorder.cend(), [](char value){ return value != 0; });
     if(!complete)
     {
-        return weightedBalance3RootGather(std::move(localPairs), comp, comm);
+        return weightedBalance3RootGather(std::move(localPairs), comp, comm, pieces);
     }
 
-    if(rank == 0)
+    if(rank == 0 && mesh_decomposer_runtime_log_detail::Detailed())
     {
         std::cout << "Weighted borders determined in 1 pass." << std::endl;
     }
@@ -320,14 +333,14 @@ std::vector<T> weightedBalance3Direct(std::vector<WeightedBalance3Pair<T>> local
 }
 
 template<typename T, typename Comparator = std::function<bool(const T&, const T&)>>
-std::vector<T> getWeightedBorders3(const std::vector<T> &values, const std::vector<double> &weights, const Comparator &comp = std::less<T>{}, const MPI_Comm &comm = MPI_COMM_WORLD)
+std::vector<T> getWeightedBorders3(const std::vector<T> &values, const std::vector<double> &weights, const Comparator &comp = std::less<T>{}, const MPI_Comm &comm = MPI_COMM_WORLD, int pieces = 0)
 {
     std::vector<WeightedBalance3Pair<T>> localPairs = makeWeightedBalance3Pairs(values, weights, comp);
     if(weightedBalance3IsGloballyOrdered(localPairs, comp, comm))
     {
-        return weightedBalance3Direct(std::move(localPairs), comp, comm);
+        return weightedBalance3Direct(std::move(localPairs), comp, comm, pieces);
     }
-    return weightedBalance3RootGather(std::move(localPairs), comp, comm);
+    return weightedBalance3RootGather(std::move(localPairs), comp, comm, pieces);
 }
 
 template<typename T, typename Comparator = std::function<bool(const T&, const T&)>>

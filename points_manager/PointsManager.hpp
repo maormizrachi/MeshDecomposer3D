@@ -7,6 +7,7 @@
 #include <iostream>
 #include <memory>
 #include <numeric>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -19,6 +20,7 @@
 #include "../environment/EnvironmentAgent.hpp"
 #include "../error.hpp"
 #include "../load_balancing/LoadBalancer.hpp"
+#include "../runtime_log.hpp"
 #include "ExchangeFieldIO.hpp"
 
 #define IMBALANCE_FACTOR 1.15
@@ -182,7 +184,7 @@ void PointsManager<PointT, PayloadT>::reportImbalance(size_t localPointCount) co
     auto [maxPointsRank, maxPointsVal] = MPI_Max_loc(static_cast<int>(localPointCount), this->comm);
     auto [minPointsRank, minPointsVal] = MPI_Min_loc(static_cast<int>(localPointCount), this->comm);
 
-    if(this->rank == 0)
+    if(this->rank == 0 && mesh_decomposer_runtime_log_detail::Detailed())
     {
         std::cout << "Imbalance report: max weight is " << maxWeighted.weight << " in rank " << maxWeighted.rank
                   << " (" << maxRankPointCount << " points)"
@@ -208,14 +210,14 @@ bool PointsManager<PointT, PayloadT>::checkForRebalance(double myWeight) const
     myWeightRanked.weight = myWeight;
     myWeightRanked.rank = this->rank;
     MPI_Allreduce(&myWeightRanked, &maxWeight, 1, MPI_DOUBLE_INT, MPI_MAXLOC, this->comm);
-    if(this->rank == 0)
+    if(this->rank == 0 && mesh_decomposer_runtime_log_detail::Detailed())
     {
         std::cout << "Max weight in rank " << maxWeight.rank << ", its weight is " << maxWeight.weight
                   << ", ideal is " << idealWeight << std::endl;
     }
     if(maxWeight.weight >= (this->imbalanceTolerance * idealWeight))
     {
-        if(this->rank == 0)
+        if(this->rank == 0 && mesh_decomposer_runtime_log_detail::Detailed())
         {
             std::cout << "Doing rebalance!" << std::endl;
         }
@@ -248,7 +250,7 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::update(
 
     this->totalWeight = std::accumulate(result.newWeights.cbegin(), result.newWeights.cend(), 0.0);
     end = std::chrono::high_resolution_clock::now();
-    if(this->rank == 0)
+    if(this->rank == 0 && mesh_decomposer_runtime_log_detail::Detailed())
     {
         std::cout << "Time for exchange: " << std::chrono::duration<double>(end - start).count() << " seconds" << std::endl;
     }
@@ -267,7 +269,7 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::update(
         result = this->exchange(allPoints, allWeights, payloads, indicesToWorkWith, not doExchange);
         this->totalWeight = std::accumulate(result.newWeights.cbegin(), result.newWeights.cend(), 0.0);
         end = std::chrono::high_resolution_clock::now();
-        if(this->rank == 0)
+        if(this->rank == 0 && mesh_decomposer_runtime_log_detail::Detailed())
         {
             std::cout << "Time for load balancing: " << std::chrono::duration<double>(end - start).count() << " seconds" << std::endl;
         }

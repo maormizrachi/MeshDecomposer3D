@@ -54,6 +54,9 @@ private:
     int rank, size;
     size_t depth;
     const std::shared_ptr<HilbertConvertor3D<PointT>> convertor;
+    // Owner of each responsibility-range segment; empty for positional
+    // ownership (segment i belongs to rank i).
+    std::vector<int> segmentOwner;
 
     void buildTreeHelper(Node *currentNode,
                          const typename HilbertRectangularConvertor3D<PointT>::RecursionArguments &current_args,
@@ -70,9 +73,17 @@ private:
 public:
     HilbertRectangularTree3D(std::shared_ptr<HilbertRectangularConvertor3D<PointT>> convertor,
                              const std::vector<hilbert_index_t> &responsibilityRange,
-                             const MPI_Comm &comm = MPI_COMM_WORLD)
-        : comm(comm), convertor(convertor)
+                             const MPI_Comm &comm = MPI_COMM_WORLD,
+                             const std::vector<int> &segmentOwner = std::vector<int>())
+        : comm(comm), convertor(convertor), segmentOwner(segmentOwner)
     {
+        if(!this->segmentOwner.empty() && this->segmentOwner.size() != responsibilityRange.size())
+        {
+            DomainDecompError eo("HilbertRectangularTree3D: segment owners do not match the responsibility range");
+            eo.addEntry("segment owners", this->segmentOwner.size());
+            eo.addEntry("responsibility range", responsibilityRange.size());
+            throw eo;
+        }
         MPI_Comm_rank(this->comm, &this->rank);
         MPI_Comm_size(this->comm, &this->size);
         this->depth = 0;
@@ -224,9 +235,47 @@ void HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::buildTreeHelper(
     currentNode->boundingBox = BoundingBox<PointT>(rectConvertor->WidthHeightDepthToXYZ(ll.x, ll.y, ll.z),
                                                    rectConvertor->WidthHeightDepthToXYZ(ur.x, ur.y, ur.z));
 
+    // Segmented ownership: the node's leaf status and owners follow the
+    // segments its curve range [d_start, d_end) overlaps; a leaf lists each
+    // distinct owner of those segments once.
+    if(!this->segmentOwner.empty())
+    {
+        const size_t segments = responsibilityRange.size();
+        auto segmentOf = [&](hilbert_index_t d)
+        {
+            size_t index = static_cast<size_t>(std::distance(responsibilityRange.cbegin(),
+                std::upper_bound(responsibilityRange.cbegin(), responsibilityRange.cend(), d)));
+            return std::min<size_t>(index, segments - 1);
+        };
+        const size_t firstSegment = segmentOf(currentNode->d_start);
+        const size_t lastSegment = segmentOf(currentNode->d_end - 1);
+        if((lastSegment - firstSegment) < static_cast<size_t>(max_ranks_per_leaf))
+        {
+            currentNode->is_leaf = true;
+            currentNode->owners.clear();
+            for(size_t segment = firstSegment; segment <= lastSegment; segment++)
+            {
+                const int owner = this->segmentOwner[segment];
+                if(std::find(currentNode->owners.begin(), currentNode->owners.end(), owner) == currentNode->owners.end())
+                {
+                    currentNode->owners.push_back(owner);
+                }
+            }
+            std::sort(currentNode->owners.begin(), currentNode->owners.end());
+            current_d += num_points;
+            return;
+        }
+    }
+
     std::pair<int, int> ranksMatching = {0, this->size - 1};
 
-    if(current_d >= responsibilityRange.back())
+    if(!this->segmentOwner.empty())
+    {
+        // Not a leaf under segmented ownership: fall through to the split
+        // below with a range wide enough to open this node.
+        ranksMatching = {0, max_ranks_per_leaf};
+    }
+    else if(current_d >= responsibilityRange.back())
     {
         ranksMatching = {this->size - 1, this->size - 1};
     }

@@ -138,6 +138,23 @@ Optional geometry mapping before Hilbert indexing:
 manager.setIndexing(std::make_shared<const Kernelization3D::Sphere<Vec3>>(center, radius));
 ```
 
+### Sphere–rank routing agents
+
+`HilbertPointsManager` answers `getIntersectingRanks` through one of two agents:
+
+- `HilbertTreeEnvironmentAgent` derives rank sets from the load balancer's Hilbert
+  ranges. It is exact only while every point sits on its nominal owner, i.e.
+  right after an exchange, and it costs nothing to refresh.
+- `DistributedOctEnvironmentAgent` merges the ranks' local oct trees (collective
+  `MPI_Allgather` per merged node) and answers from the actual point positions.
+
+The manager starts with the Hilbert-tree agent. It switches permanently to the
+oct-tree agent when a custom indexing kernel is set, or when any `exchange()`
+call runs with `noExchange=true`: from then on points may drift out of their
+nominal ranges, so routing has to follow the points. The oct tree is rebuilt in
+`onExchange` on every subsequent exchange step. `clone()` shares the built tree
+and is not collective.
+
 Query spatial neighbors after initialization:
 
 ```cpp
