@@ -2,6 +2,7 @@
 #define MESH_DECOMPOSER_HILBERT_POINTS_MANAGER_HPP
 
 
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <numeric>
@@ -74,6 +75,8 @@ private:
 
     std::shared_ptr<HilbertLoadBalancer<PointT>> loadBalancer = nullptr;
     std::shared_ptr<HilbertCurveEnvironmentAgent<PointT>> envAgent = nullptr;
+    // RICH_MADVORO_IDENTITY_EXCHANGE agreed on this->comm: -1 until first needed, then 0 or 1.
+    int identityExchange_ = -1;
     std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> pendingIndexing_ = nullptr;
     bool customIndexingIsSet = false;
     // Set once a build ran with the point exchange suppressed. From then on the
@@ -117,12 +120,46 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
         {
             std::vector<size_t> allIndices(allPoints.size());
             std::iota(allIndices.begin(), allIndices.end(), size_t(0));
-            exchangeResult = this->pointsExchange(
-                [this](const ExchangePoint<PointT, PayloadT> &)
-                {
-                    return this->rank;
-                },
-                allPoints, allWeights, payloads, allIndices);
+            // Every point stays on this rank, so the exchange result is the identity: dataExchange keeps self data
+            // in input order and sends nothing.  Building it directly skips the packing of every owned point and the
+            // all-to-all count/payload collectives (noExchange is agreed collectively by the caller, so every rank
+            // skips them).  RICH_MADVORO_IDENTITY_EXCHANGE=0 keeps the exchange.  The setting is agreed on this
+            // manager's communicator the first time this manager takes the branch, which every rank of that
+            // communicator does together; the result is per manager, so managers on other communicators agree
+            // their own.
+            if(this->identityExchange_ < 0)
+            {
+                char const* const value = std::getenv("RICH_MADVORO_IDENTITY_EXCHANGE");
+                int enabled = (value == nullptr || value[0] == '\0' || std::string(value) == "1") ? 1 :
+                    (std::string(value) == "0" ? 0 : -1);
+                int extrema[2] = {enabled, -enabled};
+                MPI_Allreduce(MPI_IN_PLACE, extrema, 2, MPI_INT, MPI_MAX, this->comm);
+                if(extrema[0] != -extrema[1] || extrema[0] < 0)
+                    throw DomainDecompError("RICH_MADVORO_IDENTITY_EXCHANGE must be 0 or 1 on every rank");
+                this->identityExchange_ = extrema[0];
+            }
+            if(this->identityExchange_ != 0)
+            {
+                // Same contract as pointsExchange, which reads weights and payloads at every point index.
+                size_t const count = allPoints.size();
+                if(allWeights.size() < count || payloads.size() < count)
+                    throw DomainDecompError("Identity exchange needs a weight and a payload for every point");
+                exchangeResult.newPoints = allPoints;
+                exchangeResult.newWeights.assign(allWeights.begin(), allWeights.begin() +
+                    static_cast<std::ptrdiff_t>(count));
+                exchangeResult.newPayloads.assign(payloads.begin(), payloads.begin() +
+                    static_cast<std::ptrdiff_t>(count));
+                exchangeResult.newIndices = allIndices;
+                exchangeResult.indicesToSelf = allIndices;
+                exchangeResult.participatingIndices.assign(count, true);
+            }
+            else
+                exchangeResult = this->pointsExchange(
+                    [this](const ExchangePoint<PointT, PayloadT> &)
+                    {
+                        return this->rank;
+                    },
+                    allPoints, allWeights, payloads, allIndices);
 
             // A partial build still needs every owned generator as a possible
             // geometric neighbor.  Suppressing ownership exchange must only
