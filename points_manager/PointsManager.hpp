@@ -27,6 +27,21 @@ struct EmptyPayload
 {
 };
 
+/*! \brief How an exchange interprets `indicesToWorkWith`.
+    OnlyIndices: the input is a global array shared by all ranks and
+    `indicesToWorkWith` is this rank's slice; only that slice is exchanged
+    (MadCart).
+    AllPointsFlagIndices: the input is this rank's own points; all of them are
+    exchanged, and `indicesToWorkWith` marks the participating ones. MadVoro
+    partial builds need this, since non-participating points still act as
+    neighbours and their cell data must migrate with them.
+    For a full index list the two scopes are equivalent. */
+enum class ExchangeScope
+{
+    OnlyIndices,
+    AllPointsFlagIndices
+};
+
 template<typename PointT, typename PayloadT = EmptyPayload>
 struct ExchangePoint : public Serializable
 {
@@ -105,7 +120,8 @@ public:
         const std::vector<double> &allWeights,
         const std::vector<PayloadT> &payloads,
         const std::vector<size_t> &indicesToWorkWith,
-        bool noExchange) = 0;
+        bool noExchange,
+        ExchangeScope scope) = 0;
 
     virtual void rebalance(const std::vector<PointT> &points, const std::vector<double> &weights = std::vector<double>()) = 0;
 
@@ -135,7 +151,8 @@ public:
         const std::vector<PayloadT> &payloads,
         const std::vector<size_t> &indicesToWorkWith,
         bool doRebalance = true,
-        bool doExchange = true);
+        bool doExchange = true,
+        ExchangeScope scope = ExchangeScope::OnlyIndices);
 
 protected:
     PointT ll, ur;
@@ -151,7 +168,8 @@ protected:
         const std::vector<PointT> &allPoints,
         const std::vector<double> &allWeights,
         const std::vector<PayloadT> &payloads,
-        const std::vector<size_t> &indicesToWorkWith) const;
+        const std::vector<size_t> &indicesToWorkWith,
+        ExchangeScope scope) const;
 };
 
 template<typename PointT, typename PayloadT>
@@ -238,13 +256,14 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::update(
     const std::vector<PayloadT> &payloads,
     const std::vector<size_t> &indicesToWorkWith,
     bool doRebalance,
-    bool doExchange)
+    bool doExchange,
+    ExchangeScope scope)
 {
     std::chrono::high_resolution_clock::time_point start, end;
 
     start = std::chrono::high_resolution_clock::now();
     PointsExchangeResult<PointT, PayloadT> result =
-        this->exchange(allPoints, allWeights, payloads, indicesToWorkWith, not doExchange);
+        this->exchange(allPoints, allWeights, payloads, indicesToWorkWith, not doExchange, scope);
 
     this->totalWeight = std::accumulate(result.newWeights.cbegin(), result.newWeights.cend(), 0.0);
     end = std::chrono::high_resolution_clock::now();
@@ -270,23 +289,32 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::update(
         // ranks x N pairs, which is both wasteful and overflows the int byte count
         // in weightedBalance3RootGather at high rank counts.  Restricting to the
         // owned slice yields the same borders, since uniform duplication does not
-        // move a cumulative-weight split.
+        // move a cumulative-weight split.  With AllPointsFlagIndices every local
+        // point is owned, participating or not.
         std::vector<PointT> ownedPoints;
         std::vector<double> ownedPointWeights;
-        ownedPoints.reserve(indicesToWorkWith.size());
-        ownedPointWeights.reserve(indicesToWorkWith.size());
-        for(const size_t &pointIdx : indicesToWorkWith)
+        if(scope == ExchangeScope::AllPointsFlagIndices)
         {
-            ownedPoints.push_back(allPoints[pointIdx]);
-            if(pointIdx < allWeights.size())
+            ownedPoints = allPoints;
+            ownedPointWeights = allWeights;
+        }
+        else
+        {
+            ownedPoints.reserve(indicesToWorkWith.size());
+            ownedPointWeights.reserve(indicesToWorkWith.size());
+            for(const size_t &pointIdx : indicesToWorkWith)
             {
-                ownedPointWeights.push_back(allWeights[pointIdx]);
+                ownedPoints.push_back(allPoints[pointIdx]);
+                if(pointIdx < allWeights.size())
+                {
+                    ownedPointWeights.push_back(allWeights[pointIdx]);
+                }
             }
         }
         this->rebalance(ownedPoints,
                         ownedPointWeights.size() == ownedPoints.size() ? ownedPointWeights
                                                                        : std::vector<double>());
-        result = this->exchange(allPoints, allWeights, payloads, indicesToWorkWith, not doExchange);
+        result = this->exchange(allPoints, allWeights, payloads, indicesToWorkWith, not doExchange, scope);
         this->totalWeight = std::accumulate(result.newWeights.cbegin(), result.newWeights.cend(), 0.0);
         end = std::chrono::high_resolution_clock::now();
         if(this->rank == 0)
@@ -305,18 +333,38 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::pointsEx
     const std::vector<PointT> &allPoints,
     const std::vector<double> &allWeights,
     const std::vector<PayloadT> &payloads,
-    const std::vector<size_t> &indicesToWorkWith) const
+    const std::vector<size_t> &indicesToWorkWith,
+    ExchangeScope scope) const
 {
+    const bool sendAll = (scope == ExchangeScope::AllPointsFlagIndices);
+    std::vector<size_t> sentIndices;
+    if(sendAll)
+    {
+        sentIndices.resize(allPoints.size());
+        std::iota(sentIndices.begin(), sentIndices.end(), 0);
+    }
+    else
+    {
+        sentIndices = indicesToWorkWith;
+    }
+
     std::vector<ExchangePoint<PointT, PayloadT>> data;
-    data.reserve(indicesToWorkWith.size());
-    for(const size_t &pointIdx : indicesToWorkWith)
+    data.reserve(sentIndices.size());
+    for(const size_t &pointIdx : sentIndices)
     {
         ExchangePoint<PointT, PayloadT> &entry = data.emplace_back();
         entry.originalIndex = pointIdx;
         entry.point = allPoints[pointIdx];
         entry.weight = allWeights[pointIdx];
         entry.payload = payloads[pointIdx];
-        entry.participating = true;
+        entry.participating = not sendAll;
+    }
+    if(sendAll)
+    {
+        for(const size_t &pointIdx : indicesToWorkWith)
+        {
+            data[pointIdx].participating = true;
+        }
     }
 
     ExchangeAnswer<ExchangePoint<PointT, PayloadT>> answer = dataExchange(data, func, this->comm);
@@ -326,7 +374,7 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::pointsEx
     toReturn.indicesToSelf.reserve(answer.indicesToMe.size());
     for(size_t localIdx : answer.indicesToMe)
     {
-        toReturn.indicesToSelf.push_back(indicesToWorkWith[localIdx]);
+        toReturn.indicesToSelf.push_back(sentIndices[localIdx]);
     }
 
     toReturn.sentProcessors = std::move(answer.processesSend);
@@ -336,7 +384,7 @@ PointsExchangeResult<PointT, PayloadT> PointsManager<PointT, PayloadT>::pointsEx
         toReturn.sentIndicesToProcessors[i].reserve(answer.indicesToProcesses[i].size());
         for(size_t localIdx : answer.indicesToProcesses[i])
         {
-            toReturn.sentIndicesToProcessors[i].push_back(indicesToWorkWith[localIdx]);
+            toReturn.sentIndicesToProcessors[i].push_back(sentIndices[localIdx]);
         }
     }
 

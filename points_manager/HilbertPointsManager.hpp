@@ -40,7 +40,8 @@ public:
         const std::vector<double> &allWeights,
         const std::vector<PayloadT> &payloads,
         const std::vector<size_t> &indicesToWorkWith,
-        bool noExchange) override;
+        bool noExchange,
+        ExchangeScope scope) override;
 
     void rebalance(const std::vector<PointT> &points, const std::vector<double> &weights = std::vector<double>()) override;
 
@@ -68,7 +69,8 @@ private:
         const std::vector<double> &weights,
         const std::vector<PayloadT> &payloads,
         const std::vector<size_t> &indicesToWorkWith,
-        bool noExchange);
+        bool noExchange,
+        ExchangeScope scope);
 
     std::shared_ptr<HilbertLoadBalancer<PointT>> GetHilbertLoadBalancer() const
     {
@@ -144,7 +146,8 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
     const std::vector<double> &allWeights,
     const std::vector<PayloadT> &payloads,
     const std::vector<size_t> &indicesToWorkWith,
-    bool noExchange)
+    bool noExchange,
+    ExchangeScope scope)
 {
     PointsExchangeResult<PointT, PayloadT> exchangeResult;
 
@@ -157,7 +160,7 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
                 {
                     return this->rank;
                 },
-                allPoints, allWeights, payloads, indicesToWorkWith);
+                allPoints, allWeights, payloads, indicesToWorkWith, scope);
         }
         else
         {
@@ -166,14 +169,14 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
                 {
                     return this->loadBalancer->getOwner(entry.point);
                 },
-                allPoints, allWeights, payloads, indicesToWorkWith);
+                allPoints, allWeights, payloads, indicesToWorkWith, scope);
         }
         this->envAgent->onExchange(exchangeResult.newPoints);
         this->lastPoints = exchangeResult.newPoints;
     }
     else
     {
-        exchangeResult = this->initialize(allPoints, allWeights, payloads, indicesToWorkWith, noExchange);
+        exchangeResult = this->initialize(allPoints, allWeights, payloads, indicesToWorkWith, noExchange, scope);
     }
 
     return exchangeResult;
@@ -276,7 +279,8 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
     const std::vector<double> &weights,
     const std::vector<PayloadT> &payloads,
     const std::vector<size_t> &indicesToWorkWith,
-    bool noExchange)
+    bool noExchange,
+    ExchangeScope scope)
 {
     if(not noExchange)
     {
@@ -293,20 +297,30 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
         // pass the global array plus an ownership slice (MadCart::BuildParallel)
         // would otherwise have every rank contribute every point: the border
         // gather then moves ranks x N pairs and overflows its int byte count.
+        // With AllPointsFlagIndices every local point is owned, participating
+        // or not.
         std::vector<PointT> ownedPoints;
         std::vector<double> ownedWeights;
-        ownedPoints.reserve(indicesToWorkWith.size());
-        ownedWeights.reserve(indicesToWorkWith.size());
-        for(const size_t &pointIdx : indicesToWorkWith)
+        if(scope == ExchangeScope::AllPointsFlagIndices)
         {
-            if(pointIdx >= points.size())
+            ownedPoints = points;
+            ownedWeights = weights;
+        }
+        else
+        {
+            ownedPoints.reserve(indicesToWorkWith.size());
+            ownedWeights.reserve(indicesToWorkWith.size());
+            for(const size_t &pointIdx : indicesToWorkWith)
             {
-                continue;
-            }
-            ownedPoints.push_back(points[pointIdx]);
-            if(pointIdx < weights.size())
-            {
-                ownedWeights.push_back(weights[pointIdx]);
+                if(pointIdx >= points.size())
+                {
+                    continue;
+                }
+                ownedPoints.push_back(points[pointIdx]);
+                if(pointIdx < weights.size())
+                {
+                    ownedWeights.push_back(weights[pointIdx]);
+                }
             }
         }
         this->rebalance(ownedPoints,
@@ -321,7 +335,7 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
             {
                 return this->rank;
             },
-            points, weights, payloads, indicesToWorkWith);
+            points, weights, payloads, indicesToWorkWith, scope);
     }
     else
     {
@@ -330,7 +344,7 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::i
             {
                 return this->loadBalancer->getOwner(entry.point);
             },
-            points, weights, payloads, indicesToWorkWith);
+            points, weights, payloads, indicesToWorkWith, scope);
     }
 
     this->lastPoints = exchangeResult.newPoints;
