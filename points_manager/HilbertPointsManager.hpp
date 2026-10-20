@@ -153,7 +153,8 @@ PointsExchangeResult<PointT, PayloadT> HilbertPointsManager<PointT, PayloadT>::e
 
     if(this->envAgent != nullptr)
     {
-        if(noExchange)
+        // On a single rank every point is this rank's: no need for its curve index
+        if(noExchange or this->size == 1)
         {
             exchangeResult = this->pointsExchange(
                 [this](const ExchangePoint<PointT, PayloadT> &)
