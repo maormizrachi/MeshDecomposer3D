@@ -337,7 +337,8 @@ vector<std::size_t> GetGlobalHibertIndeces(vector<PointT> const &cor, PointT con
 template<typename PointT>
 vector<std::size_t> HilbertOrder3D(vector<PointT> const &cor)
 {
-    static int recursiveCalls = 0;
+    // the recursion depth of this thread (subdomains sort their points in parallel)
+    static thread_local int recursiveCalls = 0;
     recursiveCalls++;
 
     if(recursiveCalls >= MAX_HILBERT_RECURSIVE_CALLS)
