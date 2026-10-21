@@ -49,7 +49,12 @@ private:
     using RanksSet = boost::container::flat_set<int>;
 
     Node *root;
-    mutable std::vector<const Node *> nodes_stack;
+    // The stack of a search, one per thread, so a tree can be searched from several threads at once
+    static std::vector<const Node *> &SearchStack()
+    {
+        thread_local std::vector<const Node *> stack;
+        return stack;
+    }
     MPI_Comm comm;
     int rank, size;
     size_t depth;
@@ -115,11 +120,11 @@ public:
 template<typename PointT, int max_ranks_per_leaf>
 HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::~HilbertRectangularTree3D()
 {
-    this->nodes_stack.push_back(this->root);
-    while(not this->nodes_stack.empty())
+    SearchStack().push_back(this->root);
+    while(not SearchStack().empty())
     {
-        const Node *node = this->nodes_stack.back();
-        this->nodes_stack.pop_back();
+        const Node *node = SearchStack().back();
+        SearchStack().pop_back();
 
         if(node == nullptr)
         {
@@ -130,7 +135,7 @@ HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::~HilbertRectangularTree3D(
         {
             for(const Node *child : node->children)
             {
-                this->nodes_stack.push_back(child);
+                SearchStack().push_back(child);
             }
         }
 
@@ -376,12 +381,12 @@ HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::getIntersectingRanks(const
     {
         return result;
     }
-    this->nodes_stack.push_back(this->root);
+    SearchStack().push_back(this->root);
 
-    while(not this->nodes_stack.empty())
+    while(not SearchStack().empty())
     {
-        const Node *node = this->nodes_stack.back();
-        this->nodes_stack.pop_back();
+        const Node *node = SearchStack().back();
+        SearchStack().pop_back();
 
         if(node->is_leaf)
         {
@@ -397,7 +402,7 @@ HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::getIntersectingRanks(const
             {
                 if(child != nullptr && SphereBoxIntersection(child->boundingBox, sphere))
                 {
-                    this->nodes_stack.push_back(child);
+                    SearchStack().push_back(child);
                 }
             }
         }
@@ -430,14 +435,14 @@ HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::getClosestFurthestPointsBy
 
     if(this->root != nullptr)
     {
-        this->nodes_stack.push_back(this->root);
+        SearchStack().push_back(this->root);
     }
 
     PointT closestPoint, furthestPoint;
-    while(not this->nodes_stack.empty())
+    while(not SearchStack().empty())
     {
-        const Node *node = this->nodes_stack.back();
-        this->nodes_stack.pop_back();
+        const Node *node = SearchStack().back();
+        SearchStack().pop_back();
 
         if(!node->is_leaf)
         {
@@ -445,7 +450,7 @@ HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::getClosestFurthestPointsBy
             {
                 if(child != nullptr)
                 {
-                    this->nodes_stack.push_back(child);
+                    SearchStack().push_back(child);
                 }
             }
             continue;
@@ -482,11 +487,11 @@ std::vector<BoundingBox<PointT>> HilbertRectangularTree3D<PointT, max_leaf_ranks
 {
     std::vector<BoundingBox<PointT>> result;
 
-    this->nodes_stack.push_back(this->root);
-    while(not this->nodes_stack.empty())
+    SearchStack().push_back(this->root);
+    while(not SearchStack().empty())
     {
-        const Node *node = this->nodes_stack.back();
-        this->nodes_stack.pop_back();
+        const Node *node = SearchStack().back();
+        SearchStack().pop_back();
         if(node == nullptr)
         {
             continue;
@@ -502,7 +507,7 @@ std::vector<BoundingBox<PointT>> HilbertRectangularTree3D<PointT, max_leaf_ranks
         {
             for(const Node *child : node->children)
             {
-                this->nodes_stack.push_back(child);
+                SearchStack().push_back(child);
             }
         }
     }
@@ -514,11 +519,11 @@ std::vector<std::vector<BoundingBox<PointT>>> HilbertRectangularTree3D<PointT, m
 {
     std::vector<std::vector<BoundingBox<PointT>>> result(this->size);
 
-    this->nodes_stack.push_back(this->root);
-    while(not this->nodes_stack.empty())
+    SearchStack().push_back(this->root);
+    while(not SearchStack().empty())
     {
-        const Node *node = this->nodes_stack.back();
-        this->nodes_stack.pop_back();
+        const Node *node = SearchStack().back();
+        SearchStack().pop_back();
         if(node == nullptr)
         {
             continue;
@@ -534,7 +539,7 @@ std::vector<std::vector<BoundingBox<PointT>>> HilbertRectangularTree3D<PointT, m
         {
             for(const Node *child : node->children)
             {
-                this->nodes_stack.push_back(child);
+                SearchStack().push_back(child);
             }
         }
     }
@@ -581,12 +586,12 @@ template<typename PointT, int max_leaf_ranks>
 std::vector<int> HilbertRectangularTree3D<PointT, max_leaf_ranks>::getOwners(const PointT &point) const
 {
     std::vector<int> result;
-    this->nodes_stack.push_back(this->root);
+    SearchStack().push_back(this->root);
 
-    while(not this->nodes_stack.empty())
+    while(not SearchStack().empty())
     {
-        const Node *node = this->nodes_stack.back();
-        this->nodes_stack.pop_back();
+        const Node *node = SearchStack().back();
+        SearchStack().pop_back();
 
         if(node == nullptr)
         {
@@ -608,7 +613,7 @@ std::vector<int> HilbertRectangularTree3D<PointT, max_leaf_ranks>::getOwners(con
             {
                 for(const Node *child : node->children)
                 {
-                    this->nodes_stack.push_back(child);
+                    SearchStack().push_back(child);
                 }
             }
         }
