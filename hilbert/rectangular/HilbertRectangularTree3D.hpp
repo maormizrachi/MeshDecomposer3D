@@ -17,6 +17,8 @@
 #include "../../error.hpp"
 
 #define DEFAULT_RANKS_IN_LEAVES 4
+// Single-rank leaves extend this far beyond a rank's region (a fraction of its largest extent)
+#define REFINE_MARGIN 0.25
 #define UNDEFINED_OWNER -1
 
 #ifndef EPSILON
@@ -61,6 +63,28 @@ private:
     int rank, size;
     size_t depth;
     const std::shared_ptr<HilbertConvertor3D<PointT>> convertor;
+    // Near this rank's own region (`refineBox`), leaves hold a single rank; elsewhere up to
+    // max_leaf_ranks. A sphere around this rank's points, as its searches are, then
+    // reaches only the ranks whose cells it meets, while the tree stays small for many
+    // ranks: only the few nodes that hold a rank boundary are split, and only near here.
+    bool refineNearRank = false;
+    BoundingBox<PointT> refineBox;
+
+    bool isLeaf(int rankSpan, const BoundingBox<PointT> &box) const
+    {
+        if(rankSpan >= max_leaf_ranks)
+            return false;
+        if(rankSpan == 0 or not this->refineNearRank)
+            return true;
+        for(int j = 0; j < 3; j++)
+        {
+            if(box.getUR()[j] < this->refineBox.getLL()[j] or box.getLL()[j] > this->refineBox.getUR()[j])
+                return true;
+        }
+        return false;
+    }
+
+    void deleteTree();
 
     void buildTreeHelper(Node *currentNode,
                          const typename HilbertRectangularConvertor3D<PointT>::RecursionArguments &current_args,
@@ -121,6 +145,12 @@ public:
 
 template<typename PointT, int max_ranks_per_leaf>
 HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::~HilbertRectangularTree3D()
+{
+    this->deleteTree();
+}
+
+template<typename PointT, int max_ranks_per_leaf>
+void HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::deleteTree()
 {
     std::vector<const Node *> &nodes_stack = SearchStack();
     nodes_stack.push_back(this->root);
@@ -262,7 +292,7 @@ void HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::buildTreeHelper(
     PointT newLL = std::numeric_limits<coord_type>::max() * PointT(1, 1, 1);
     PointT newUR = std::numeric_limits<coord_type>::lowest() * PointT(1, 1, 1);
 
-    if((ranksMatching.second - ranksMatching.first) < max_ranks_per_leaf)
+    if(this->isLeaf(ranksMatching.second - ranksMatching.first, currentNode->boundingBox))
     {
         currentNode->is_leaf = true;
         size_t numOwners = ranksMatching.second - ranksMatching.first + 1;
@@ -364,6 +394,33 @@ void HilbertRectangularTree3D<PointT, max_ranks_per_leaf>::buildTree(
     this->buildTreeHelper(this->root,
                           {{0, 0, 0}, {rectConvertor->div.x, 0, 0}, {0, rectConvertor->div.y, 0}, {0, 0, rectConvertor->div.z}},
                           0, d, rectConvertor, responsibilityRange);
+    if(this->size > 1 and not this->refineNearRank)
+    {
+        // Built with up to max_leaf_ranks ranks per leaf everywhere: this rank's leaves
+        // bound its region. Build again with single-rank leaves within a margin of it.
+        PointT ll = std::numeric_limits<coord_type>::max() * PointT(1, 1, 1);
+        PointT ur = std::numeric_limits<coord_type>::lowest() * PointT(1, 1, 1);
+        for(const BoundingBox<PointT> &box : this->getMyBoundingBoxes())
+        {
+            for(int j = 0; j < 3; j++)
+            {
+                ll[j] = std::min<coord_type>(ll[j], box.getLL()[j]);
+                ur[j] = std::max<coord_type>(ur[j], box.getUR()[j]);
+            }
+        }
+        if(ll[0] <= ur[0])
+        {
+            coord_type extent = 0;
+            for(int j = 0; j < 3; j++)
+                extent = std::max<coord_type>(extent, ur[j] - ll[j]);
+            const coord_type margin = REFINE_MARGIN * extent;
+            this->refineBox = BoundingBox<PointT>(ll - PointT(margin, margin, margin), ur + PointT(margin, margin, margin));
+            this->refineNearRank = true;
+            this->deleteTree();
+            this->buildTree(rectConvertor, responsibilityRange);
+            return;
+        }
+    }
 
     if(d != rectConvertor->total_points_num)
     {
