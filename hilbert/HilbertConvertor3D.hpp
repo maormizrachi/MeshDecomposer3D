@@ -8,6 +8,7 @@
 #include "hilbertTypes.h"
 #include <memory>
 #include <string>
+#include <vector>
 
 #define MAX_HILBERT_ORDER 19
 
@@ -36,6 +37,15 @@ public:
     virtual inline hilbert_index_t xyz2d(const PointT &point) const
     {
         return this->xyz2d(point.x, point.y, point.z);
+    }
+
+    /*! \brief An index between the same two of the sorted `cuts` as the point's index
+        (upper_bound on `cuts` gives the same position for both), which may be cheaper to
+        find than the index itself, e.g. to tell which rank owns the point. */
+    virtual inline hilbert_index_t xyz2dRepresentative(const PointT &point, const std::vector<hilbert_index_t> &cuts) const
+    {
+        (void)cuts;
+        return this->xyz2d(point);
     }
 
     virtual PointT d2xyz(hilbert_index_t d) const = 0;

@@ -73,6 +73,11 @@ public:
 
     curve_index_t getCurveIndex(const PointT &point) const override;
 
+    curve_index_t getCurveIndexForOwner(const PointT &point) const override
+    {
+        return this->convertor->xyz2dRepresentative((*this->indexing)(point), this->boundaries);
+    }
+
     void setIndexing(const std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> &newIndexing);
 
     inline std::shared_ptr<const Kernelization3D::IndexingKernel3D<PointT>> getIndexing() const { return this->indexing; }

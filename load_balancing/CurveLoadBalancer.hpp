@@ -22,6 +22,12 @@ public:
 
     virtual curve_index_t getCurveIndex(const PointT &point) const = 0;
 
+    //! \brief A curve index between the same boundaries as the point's (enough for its owner)
+    virtual curve_index_t getCurveIndexForOwner(const PointT &point) const
+    {
+        return this->getCurveIndex(point);
+    }
+
     int getOwner(const PointT &point) const override
     {
         if(!std::is_sorted(this->boundaries.cbegin(), this->boundaries.cend()))
@@ -33,7 +39,7 @@ public:
             throw eo;
         }
 
-        curve_index_t d = this->getCurveIndex(point);
+        curve_index_t d = this->getCurveIndexForOwner(point);
         size_t index = std::distance(this->boundaries.cbegin(), std::upper_bound(this->boundaries.cbegin(), this->boundaries.cend(), d));
         return static_cast<int>(std::min<size_t>(index, static_cast<size_t>(this->size - 1)));
     }

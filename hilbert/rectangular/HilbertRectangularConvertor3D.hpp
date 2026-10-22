@@ -1,9 +1,11 @@
 #ifndef HILBERT_RECTANGULAR_CONVERTOR_3D_HPP
 #define HILBERT_RECTANGULAR_CONVERTOR_3D_HPP
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <utility>
+#include <vector>
 #include <spatial_ds/utils/geometry.hpp>
 #include "../HilbertConvertor3D.hpp"
 #include "../../error.hpp"
@@ -81,6 +83,10 @@ public:
 
     hilbert_index_t xyz2d(coord_t x, coord_t y, coord_t z) const override;
 
+    // Stops at the first box that holds the point and no cut: its first index is between
+    // the same cuts as the point's
+    hilbert_index_t xyz2dRepresentative(const PointT &point, const std::vector<hilbert_index_t> &cuts) const override;
+
     PointT d2xyz(hilbert_index_t d) const override;
 
     inline std::shared_ptr<HilbertConvertor3D<PointT>> clone(void) const override
@@ -95,7 +101,10 @@ private:
 
     bool xyz2d_helper_base(const DirectionVector3D &startPoint, size_t steps, const DirectionVector3D &direction, const DirectionVector3D &requested_point, hilbert_index_t &current_d) const;
 
-    bool xyz2d_helper(const RecursionArguments &args, size_t currentDepth, const DirectionVector3D &requested_point, hilbert_index_t &current_d) const;
+    bool xyz2d_helper(const RecursionArguments &args, size_t currentDepth, const DirectionVector3D &requested_point, hilbert_index_t &current_d,
+                      const std::vector<hilbert_index_t> *cuts = nullptr) const;
+    hilbert_index_t xyz2d_with_cuts(coord_t x, coord_t y, coord_t z, const std::vector<hilbert_index_t> *cuts) const;
+    bool boxContains(const RecursionArguments &args, const DirectionVector3D &point) const;
 
     std::pair<DirectionVector3D, DirectionVector3D> getBoundingBox(const RecursionArguments &args) const;
 
@@ -316,8 +325,28 @@ HilbertRectangularConvertor3D<PointT>::getBoundingBox(const RecursionArguments &
             {std::max(startPoint.x, boundary.x) + 1, std::max(startPoint.y, boundary.y) + 1, std::max(startPoint.z, boundary.z) + 1}};
 }
 
+// Whether the cell `point` is one of the box's cells (getBoundingBox is wider by design).
+// The box's vectors a, b and c lie along different axes, so along each axis the box
+// spans its start point and that axis's vector.
 template<typename PointT>
-bool HilbertRectangularConvertor3D<PointT>::xyz2d_helper(const RecursionArguments &args, size_t currentDepth, const DirectionVector3D &requested_point, hilbert_index_t &current_d) const
+bool HilbertRectangularConvertor3D<PointT>::boxContains(const RecursionArguments &args, const DirectionVector3D &point) const
+{
+    const std::array<direction_t, 3> extent = {args.a.x + args.b.x + args.c.x, args.a.y + args.b.y + args.c.y, args.a.z + args.b.z + args.c.z};
+    const std::array<direction_t, 3> start = {args.startPoint.x, args.startPoint.y, args.startPoint.z};
+    const std::array<direction_t, 3> requested = {point.x, point.y, point.z};
+    for(int k = 0; k < 3; ++k)
+    {
+        const direction_t low = (extent[k] > 0) ? start[k] : start[k] + extent[k] + 1;
+        const direction_t high = (extent[k] > 0) ? start[k] + extent[k] - 1 : start[k];
+        if(requested[k] < low or requested[k] > high)
+            return false;
+    }
+    return true;
+}
+
+template<typename PointT>
+bool HilbertRectangularConvertor3D<PointT>::xyz2d_helper(const RecursionArguments &args, size_t currentDepth, const DirectionVector3D &requested_point, hilbert_index_t &current_d,
+                                                         const std::vector<hilbert_index_t> *cuts) const
 {
     const DirectionVector3D &startPoint = args.startPoint;
     const DirectionVector3D &a = args.a;
@@ -337,6 +366,15 @@ bool HilbertRectangularConvertor3D<PointT>::xyz2d_helper(const RecursionArgument
     {
         current_d += num_points;
         return false;
+    }
+
+    // With cuts: once the box holds the point and no cut falls inside its indices
+    // [current_d, current_d + num_points), its first index is between the same cuts
+    if(cuts != nullptr and num_points > 0 and this->boxContains(args, requested_point))
+    {
+        const auto next = std::upper_bound(cuts->cbegin(), cuts->cend(), current_d);
+        if(next == cuts->cend() or *next >= current_d + num_points)
+            return true;
     }
 
     direction_t dax = SIGN(a.x), day = SIGN(a.y), daz = SIGN(a.z);
@@ -361,7 +399,7 @@ bool HilbertRectangularConvertor3D<PointT>::xyz2d_helper(const RecursionArgument
     this->setRecursionArguments(args, currentDepth);
     for(const RecursionArguments &nextArgs : this->argumentsBuffer[currentDepth + 1])
     {
-        if(this->xyz2d_helper(nextArgs, currentDepth + 1, requested_point, current_d))
+        if(this->xyz2d_helper(nextArgs, currentDepth + 1, requested_point, current_d, cuts))
         {
             return true;
         }
@@ -380,6 +418,18 @@ PointT HilbertRectangularConvertor3D<PointT>::d2xyz(hilbert_index_t d) const
 
 template<typename PointT>
 hilbert_index_t HilbertRectangularConvertor3D<PointT>::xyz2d(coord_t x, coord_t y, coord_t z) const
+{
+    return this->xyz2d_with_cuts(x, y, z, nullptr);
+}
+
+template<typename PointT>
+hilbert_index_t HilbertRectangularConvertor3D<PointT>::xyz2dRepresentative(const PointT &point, const std::vector<hilbert_index_t> &cuts) const
+{
+    return this->xyz2d_with_cuts(point.x, point.y, point.z, &cuts);
+}
+
+template<typename PointT>
+hilbert_index_t HilbertRectangularConvertor3D<PointT>::xyz2d_with_cuts(coord_t x, coord_t y, coord_t z, const std::vector<hilbert_index_t> *cuts) const
 {
     direction_t width = std::floor((x - this->ll.x) / this->step.x);
     direction_t height = std::floor((y - this->ll.y) / this->step.y);
@@ -403,7 +453,7 @@ hilbert_index_t HilbertRectangularConvertor3D<PointT>::xyz2d(coord_t x, coord_t 
     }
 
     hilbert_index_t result = 0;
-    if(not this->xyz2d_helper({{0, 0, 0}, {this->div.x, 0, 0}, {0, this->div.y, 0}, {0, 0, this->div.z}}, 0, {width, height, depth}, result))
+    if(not this->xyz2d_helper({{0, 0, 0}, {this->div.x, 0, 0}, {0, this->div.y, 0}, {0, 0, this->div.z}}, 0, {width, height, depth}, result, cuts))
     {
         DomainDecompError eo("Should not reach here (in 3D xyz->d) (maybe the point is outside the box?)");
         eo.addEntry("x", x);
